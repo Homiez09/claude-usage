@@ -9,8 +9,15 @@ private struct MenuBarProgressIcon: View {
     let weeklyPercent: Int
     let countdownText: String?
     let hasError: Bool
+    /// Non-nil while Claude Code is actively working; drives the logo's bounce.
+    let activityPhase: Double?
 
     private let logoSize: CGFloat = 14
+
+    private var logoBounceOffset: CGFloat {
+        guard let phase = activityPhase else { return 0 }
+        return CGFloat(sin(phase * .pi)) * -2.5
+    }
     private let barWidth: CGFloat = 26
     private let barHeight: CGFloat = 6
     private let barSpacing: CGFloat = 2
@@ -55,6 +62,7 @@ private struct MenuBarProgressIcon: View {
             }
         }
         .frame(width: logoSize, height: logoSize)
+        .offset(y: logoBounceOffset)
     }
 
     var body: some View {
@@ -71,6 +79,7 @@ private struct MenuBarProgressIcon: View {
             }
         }
         .padding(.horizontal, 2)
+        .padding(.vertical, 3)
     }
 }
 
@@ -88,13 +97,15 @@ enum MenuBarIconRenderer {
         sessionPercent: Int?,
         weeklyPercent: Int?,
         countdownText: String?,
-        hasError: Bool
+        hasError: Bool,
+        activityPhase: Double? = nil
     ) -> NSImage {
         let view = MenuBarProgressIcon(
             sessionPercent: sessionPercent ?? 0,
             weeklyPercent: weeklyPercent ?? 0,
             countdownText: countdownText,
-            hasError: hasError
+            hasError: hasError,
+            activityPhase: activityPhase
         )
         let renderer = ImageRenderer(content: view)
         renderer.scale = NSScreen.main?.backingScaleFactor ?? 2

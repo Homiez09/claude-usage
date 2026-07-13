@@ -55,11 +55,28 @@ final class UsageSnapshotTests: XCTestCase {
             hasSessionKey: true,
             errorMessage: nil,
             lastUpdated: "2026-07-13T07:30:00Z",
-            rows: [UsageSnapshot.Row(title: "Current session", percent: 41, resetsAt: "2026-07-13T07:30:00Z")]
+            rows: [UsageSnapshot.Row(title: "Current session", percent: 41, resetsAt: "2026-07-13T07:30:00Z")],
+            activeAgentSessions: ["Fix the login bug"]
         )
         let json = UsageSnapshotBuilder.encodeJSON(snapshot)
         let decoded = try JSONDecoder().decode(UsageSnapshot.self, from: Data(json.utf8))
         XCTAssertEqual(decoded, snapshot)
+    }
+
+    func testBuildIncludesActiveAgentSessions() {
+        let snapshot = UsageSnapshotBuilder.build(
+            hasSessionKey: true,
+            usage: nil,
+            errorMessage: nil,
+            lastUpdated: nil,
+            activeAgentSessions: ["Fix the login bug", "Refactor billing"]
+        )
+        XCTAssertEqual(snapshot.activeAgentSessions, ["Fix the login bug", "Refactor billing"])
+    }
+
+    func testBuildDefaultsToNoActiveAgentSessions() {
+        let snapshot = UsageSnapshotBuilder.build(hasSessionKey: true, usage: nil, errorMessage: nil, lastUpdated: nil)
+        XCTAssertTrue(snapshot.activeAgentSessions.isEmpty)
     }
 
     func testRouteReturnsJSONForApiUsagePath() {

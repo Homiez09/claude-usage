@@ -15,6 +15,8 @@ struct UsageSnapshot: Codable, Equatable {
     let errorMessage: String?
     let lastUpdated: String?
     let rows: [Row]
+    /// Display names of Claude Code sessions currently active on this Mac.
+    let activeAgentSessions: [String]
 }
 
 enum UsageSnapshotBuilder {
@@ -24,7 +26,8 @@ enum UsageSnapshotBuilder {
         hasSessionKey: Bool,
         usage: UsageResponse?,
         errorMessage: String?,
-        lastUpdated: Date?
+        lastUpdated: Date?,
+        activeAgentSessions: [String] = []
     ) -> UsageSnapshot {
         var rows: [UsageSnapshot.Row] = []
 
@@ -54,7 +57,8 @@ enum UsageSnapshotBuilder {
             hasSessionKey: hasSessionKey,
             errorMessage: errorMessage,
             lastUpdated: lastUpdated.map { iso8601.string(from: $0) },
-            rows: rows
+            rows: rows,
+            activeAgentSessions: activeAgentSessions
         )
     }
 

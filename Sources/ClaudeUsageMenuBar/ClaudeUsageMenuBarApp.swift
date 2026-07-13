@@ -7,9 +7,9 @@ struct ClaudeUsageMenuBarApp: App {
 
     var body: some Scene {
         MenuBarExtra {
-            MenuContentView(store: store)
+            MenuContentView(store: store, activityMonitor: store.activityMonitor)
         } label: {
-            MenuBarLabel(store: store)
+            MenuBarLabel(store: store, activityMonitor: store.activityMonitor)
         }
         .menuBarExtraStyle(.window)
     }
@@ -17,6 +17,7 @@ struct ClaudeUsageMenuBarApp: App {
 
 private struct MenuBarLabel: View {
     @ObservedObject var store: UsageStore
+    @ObservedObject var activityMonitor: ClaudeCodeActivityMonitor
 
     var body: some View {
         let hasError = store.errorMessage != nil && store.usage == nil
@@ -24,7 +25,8 @@ private struct MenuBarLabel: View {
             sessionPercent: store.sessionPercent,
             weeklyPercent: store.weeklyPercent,
             countdownText: ResetDescriber.shortCountdown(store.sessionResetsAt),
-            hasError: hasError
+            hasError: hasError,
+            activityPhase: activityMonitor.isActive ? activityMonitor.animationPhase : nil
         ))
         .renderingMode(.original)
     }

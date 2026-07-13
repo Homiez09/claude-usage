@@ -7,6 +7,9 @@ final class UsageStore: ObservableObject {
     @Published var errorMessage: String?
     @Published var isLoading = false
 
+    let activityMonitor: ClaudeCodeActivityMonitor
+    let historyStore: ClaudeCodeHistoryStore
+
     private let service: ClaudeUsageService
     private let keychain: KeychainHelper
     private var timer: Timer?
@@ -18,13 +21,21 @@ final class UsageStore: ObservableObject {
         keychain: KeychainHelper = .shared,
         refreshInterval: TimeInterval = 60,
         autoStart: Bool = true,
-        enableLocalWebServer: Bool = false
+        enableLocalWebServer: Bool = false,
+        activityMonitor: ClaudeCodeActivityMonitor? = nil,
+        historyStore: ClaudeCodeHistoryStore? = nil
     ) {
         self.service = service
         self.keychain = keychain
         self.refreshInterval = refreshInterval
+        let activityMonitor = activityMonitor ?? ClaudeCodeActivityMonitor()
+        self.activityMonitor = activityMonitor
+        let historyStore = historyStore ?? ClaudeCodeHistoryStore()
+        self.historyStore = historyStore
         if autoStart {
             start()
+            activityMonitor.start()
+            historyStore.startAutoRefresh()
         }
         if enableLocalWebServer {
             startLocalWebServer()

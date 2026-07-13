@@ -15,9 +15,14 @@ struct ClaudeCodeSessionStatus: Identifiable, Equatable {
 ///
 /// There's no IPC/status API to query — instead this watches
 /// `~/.claude/projects/<project>/<session-id>.jsonl`, which Claude Code
-/// appends to continuously while thinking, calling tools, or streaming a
-/// response. If a session's file was touched within the last few seconds,
-/// it's actively running; once writes stop (waiting on the user), it's idle.
+/// appends to on each turn (a tool call, a streamed reply, etc). A single
+/// write can be followed by tens of seconds of silence — a slow bash
+/// command, a web fetch, or just the model thinking — with no new bytes on
+/// disk even though the session is very much still working. An 8s window
+/// (this monitor's original value) mistook those pauses for "idle", and made
+/// concurrent sessions look like they were never active at the same time
+/// (each writes on its own schedule, so a narrow window rarely catches two
+/// at once). The window is widened accordingly — see `activeWindow` below.
 @MainActor
 final class ClaudeCodeActivityMonitor: ObservableObject {
     @Published private(set) var sessions: [ClaudeCodeSessionStatus] = []
@@ -32,7 +37,7 @@ final class ClaudeCodeActivityMonitor: ObservableObject {
 
     init(
         directory: URL = ClaudeCodeTranscriptScanner.projectsDirectory,
-        activeWindow: TimeInterval = 8,
+        activeWindow: TimeInterval = 45,
         autoStart: Bool = false
     ) {
         self.directory = directory

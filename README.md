@@ -8,9 +8,7 @@ session + weekly progress), plus:
 - a Claude Code usage/cost history tab, computed locally from
   `~/.claude/projects/**/*.jsonl` (never sent over the network)
 - live detection of which Claude Code sessions are actively working right
-  now, shown on the menu bar icon (bounce animation) and in the main window
-- clicking the menu bar icon opens a real, freely-movable app window (not a
-  popover anchored under the icon) — click again to close it
+  now, shown on the menu bar icon (bounce animation) and in the dropdown
 
 ## Project structure
 
@@ -22,11 +20,8 @@ claude_usage/
 │   ├── Info.plist             # Bundle metadata for the packaged .app (LSUIElement, etc.)
 │   └── claude-logo.png        # Source asset for the embedded menu bar logo
 ├── Sources/ClaudeUsageMenuBar/
-│   ├── ClaudeUsageMenuBarApp.swift      # @main entry point; body is just an empty
-│   │                                     # Settings {} scene (window is managed by AppKit)
-│   ├── AppDelegate.swift                # Owns the UsageStore, sets the accessory
-│   │                                     # activation policy (no Dock icon), builds
-│   │                                     # the NSStatusItem, and re-renders its icon
+│   ├── ClaudeUsageMenuBarApp.swift      # @main entry point, MenuBarExtra scene
+│   ├── AppDelegate.swift                # Forces accessory (no Dock icon) activation policy
 │   │
 │   ├── UsageStore.swift                 # Central state: polls claude.ai, owns the
 │   │                                     # local web server + activity monitor
@@ -35,14 +30,12 @@ claude_usage/
 │   ├── KeychainHelper.swift             # Session key storage (macOS Keychain)
 │   ├── DateParsing.swift                # ISO8601 parsing + "resets in Xh Ym" formatting
 │   │
-│   ├── MenuContentView.swift            # The main window's UI (Usage / History tabs)
-│   ├── MainWindowPresenter.swift        # Hosts MenuContentView in a real, freely
-│   │                                     # movable NSWindow — clicking the status
-│   │                                     # item toggles it open/closed
+│   ├── MenuContentView.swift            # The dropdown UI (Usage / History tabs)
 │   ├── UsageHistoryView.swift           # History tab UI
 │   ├── SettingsView.swift               # Session key entry screen
-│   ├── SettingsWindowPresenter.swift    # Hosts SettingsView in its own real NSWindow
-│   │                                     # (not a SwiftUI .sheet — see inline comment)
+│   ├── SettingsWindowPresenter.swift    # Hosts SettingsView in a real NSWindow
+│   │                                     # (not a SwiftUI .sheet — see inline comment
+│   │                                     # for why that broke MenuBarExtra)
 │   ├── MenuBarProgressIcon.swift        # Renders the colored menu bar icon as a bitmap
 │   ├── ClaudeLogo.swift                 # Base64-embedded logo (see note below)
 │   │

@@ -51,7 +51,7 @@ struct UsageHistoryView: View {
             } else {
                 let buckets = store.buckets(for: granularity)
                 ScrollView {
-                    VStack(alignment: .leading, spacing: 6) {
+                    VStack(spacing: 6) {
                         ForEach(buckets) { bucket in
                             HistoryRow(
                                 bucket: bucket,
@@ -80,17 +80,31 @@ private struct HistoryRow: View {
 
     var body: some View {
         HStack {
+            Circle()
+                .fill(Color.orange.opacity(0.15))
+                .frame(width: 26, height: 26)
+                .overlay(
+                    Image(systemName: "clock")
+                        .font(.system(size: 11, weight: .semibold))
+                        .foregroundColor(.orange)
+                )
             Text(bucket.label)
-                .font(.system(size: 12, weight: .medium))
+                .font(.system(size: 12, weight: .medium, design: .rounded))
             Spacer()
             VStack(alignment: .trailing, spacing: 1) {
                 Text(currencyFormatter.string(from: NSNumber(value: bucket.totalCostUSD)) ?? "$0.00")
-                    .font(.system(size: 12, weight: .semibold))
+                    .font(.system(size: 12, weight: .bold, design: .rounded))
                 Text("\(tokenFormatter.string(from: NSNumber(value: bucket.totalTokens)) ?? "0") tokens")
                     .font(.caption2)
                     .foregroundColor(.secondary)
             }
         }
-        .padding(.vertical, 2)
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.05))
+        )
     }
 }

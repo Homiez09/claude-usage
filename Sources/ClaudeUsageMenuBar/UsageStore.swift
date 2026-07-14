@@ -26,6 +26,9 @@ final class UsageStore: ObservableObject {
             triggerIslandPulseNotification()
         }
     }
+    @Published var islandPulseJobId: String {
+        didSet { UserDefaults.standard.set(islandPulseJobId, forKey: "PrefIslandPulseJobId") }
+    }
 
     private let service: ClaudeUsageService
     private let keychain: KeychainHelper
@@ -52,6 +55,7 @@ final class UsageStore: ObservableObject {
         self.showSessionBar = UserDefaults.standard.object(forKey: "PrefShowSessionBar") == nil ? true : UserDefaults.standard.bool(forKey: "PrefShowSessionBar")
         self.showWeeklyBar = UserDefaults.standard.object(forKey: "PrefShowWeeklyBar") == nil ? true : UserDefaults.standard.bool(forKey: "PrefShowWeeklyBar")
         self.islandPulseToken = UserDefaults.standard.string(forKey: "PrefIslandPulseToken") ?? ""
+        self.islandPulseJobId = UserDefaults.standard.string(forKey: "PrefIslandPulseJobId") ?? "claude-usage"
 
         let activityMonitor = activityMonitor ?? ClaudeCodeActivityMonitor()
         self.activityMonitor = activityMonitor
@@ -222,8 +226,9 @@ final class UsageStore: ObservableObject {
             metric = "\(sessionPct)%"
         }
 
+        let jobId = islandPulseJobId.isEmpty ? "claude-usage" : islandPulseJobId
         let payload: [String: Any] = [
-            "job_id": "claude-usage",
+            "job_id": jobId,
             "title": "Claude Usage",
             "message": message,
             "metric": metric,
@@ -245,8 +250,9 @@ final class UsageStore: ObservableObject {
         let token = islandPulseToken.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !token.isEmpty else { return }
 
+        let jobId = islandPulseJobId.isEmpty ? "claude-usage" : islandPulseJobId
         let payload: [String: Any] = [
-            "job_id": "claude-usage",
+            "job_id": jobId,
             "title": "Claude Usage",
             "message": "Live Activity Ended",
             "metric": "--",

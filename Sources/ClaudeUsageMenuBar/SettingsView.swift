@@ -146,7 +146,17 @@ struct SettingsView: View {
                     Text("API Token:")
                         .font(.system(size: 12))
                     Spacer()
-                    TextField("Bearer Token", text: $inputToken)
+                    TextField("Bearer Token (UUID)", text: $inputToken)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 11, design: .monospaced))
+                        .frame(width: 200)
+                }
+
+                HStack {
+                    Text("Job ID:")
+                        .font(.system(size: 12))
+                    Spacer()
+                    TextField("ชื่อ Pipeline ในแอป", text: $store.islandPulseJobId)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 11, design: .monospaced))
                         .frame(width: 200)
@@ -171,7 +181,7 @@ struct SettingsView: View {
                     }
                 }
                 
-                Text("คัดลอก Bearer Token ได้จากแอป Island Pulse บน iPhone")
+                Text("คัดลอก Bearer Token และ Job ID ได้จากแอป Island Pulse บน iPhone")
                     .font(.system(size: 10))
                     .foregroundColor(.secondary)
             }

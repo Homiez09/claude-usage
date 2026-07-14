@@ -32,14 +32,5 @@ private struct MenuBarLabel: View {
             showWeeklyBar: store.showWeeklyBar
         ))
         .renderingMode(.original)
-        // Listen for the global hotkey notification and simulate a click
-        // on the status item button to open/close the popover.
-        .onReceive(NotificationCenter.default.publisher(for: .toggleMenuBarExtra)) { _ in
-            // NSStatusBar.system.statusItems is not exposed in Swift's public API;
-            // KVC is the standard workaround for non-App-Store menu bar apps.
-            if let items = NSStatusBar.system.value(forKey: "statusItems") as? [NSStatusItem] {
-                items.first?.button?.performClick(nil)
-            }
-        }
     }
 }

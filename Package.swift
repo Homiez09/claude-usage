@@ -7,10 +7,7 @@ let package = Package(
     targets: [
         .executableTarget(
             name: "ClaudeUsageMenuBar",
-            path: "Sources/ClaudeUsageMenuBar",
-            linkerSettings: [
-                .linkedFramework("Carbon")
-            ]
+            path: "Sources/ClaudeUsageMenuBar"
         ),
         .testTarget(
             name: "ClaudeUsageMenuBarTests",

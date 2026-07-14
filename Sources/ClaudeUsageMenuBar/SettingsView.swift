@@ -136,25 +136,6 @@ struct SettingsView: View {
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text("Keyboard Shortcut")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(.secondary)
-
-                HStack {
-                    Text("เปิด/ปิดเมนู:")
-                        .font(.system(size: 12))
-                    Spacer()
-                    ShortcutRecorderButton()
-                }
-
-                Text("กดปุ่มเพื่อบันทึก shortcut ใหม่ · ไม่ต้องขอ Accessibility permission")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-            }
-
-            Divider()
-
             HStack {
                 if store.hasSessionKey {
                     Button("ล้างค่า / ออกจากระบบ", role: .destructive) {

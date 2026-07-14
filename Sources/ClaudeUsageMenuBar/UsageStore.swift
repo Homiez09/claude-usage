@@ -240,4 +240,34 @@ final class UsageStore: ObservableObject {
 
         URLSession.shared.dataTask(with: request) { _, _, _ in }.resume()
     }
+
+    func disableIslandPulse() {
+        let token = islandPulseToken.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !token.isEmpty else { return }
+
+        let payload: [String: Any] = [
+            "job_id": "claude-usage",
+            "title": "Claude Usage",
+            "message": "Live Activity Ended",
+            "metric": "--",
+            "progress": 0.0,
+            "status": "success"
+        ]
+
+        guard let url = URL(string: "https://api.islandpulse.dev/notify") else {
+            self.islandPulseToken = ""
+            return
+        }
+        var request = URLRequest(url: url)
+        request.httpMethod = "POST"
+        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
+        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
+        request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
+
+        URLSession.shared.dataTask(with: request) { [weak self] _, _, _ in
+            Task { @MainActor in
+                self?.islandPulseToken = ""
+            }
+        }.resume()
+    }
 }

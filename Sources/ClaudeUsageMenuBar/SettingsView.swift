@@ -4,6 +4,7 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var store: UsageStore
     @State private var isRefreshing = false
+    @State private var inputToken = ""
 
     private let providers: [LoginProvider] = [.claude]
 
@@ -145,10 +146,29 @@ struct SettingsView: View {
                     Text("API Token:")
                         .font(.system(size: 12))
                     Spacer()
-                    TextField("Bearer Token", text: $store.islandPulseToken)
+                    TextField("Bearer Token", text: $inputToken)
                         .textFieldStyle(.roundedBorder)
                         .font(.system(size: 11, design: .monospaced))
                         .frame(width: 200)
+                }
+                
+                HStack(spacing: 10) {
+                    Button("เชื่อมต่อ") {
+                        store.islandPulseToken = inputToken
+                    }
+                    .disabled(inputToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
+                    
+                    if !store.islandPulseToken.isEmpty {
+                        Button("ส่งข้อมูลใหม่") {
+                            store.triggerIslandPulseNotification()
+                        }
+                        
+                        Button("ปิดการแสดงผล") {
+                            store.disableIslandPulse()
+                            inputToken = ""
+                        }
+                        .tint(.red)
+                    }
                 }
                 
                 Text("คัดลอก Bearer Token ได้จากแอป Island Pulse บน iPhone")
@@ -176,6 +196,9 @@ struct SettingsView: View {
         }
         .padding(20)
         .frame(width: 380)
+        .onAppear {
+            inputToken = store.islandPulseToken
+        }
     }
 
     private func startLogin(provider: LoginProvider) {

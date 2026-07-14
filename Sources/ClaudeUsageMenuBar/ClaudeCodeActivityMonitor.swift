@@ -1,4 +1,5 @@
 import Foundation
+import CoreServices
 
 /// One Claude Code session (one `claude` process/terminal), labeled with its
 /// auto-generated title when known.
@@ -7,22 +8,13 @@ struct ClaudeCodeSessionStatus: Identifiable, Equatable {
     let displayName: String
     let isActive: Bool
     let lastActivity: Date
+    let model: String?
+    let totalTokens: Int
 }
 
 /// Detects which Claude Code sessions are actively working right now, across
 /// every project on this Mac, and drives the menu bar icon's bounce animation
 /// while at least one is.
-///
-/// There's no IPC/status API to query — instead this watches
-/// `~/.claude/projects/<project>/<session-id>.jsonl`, which Claude Code
-/// appends to on each turn (a tool call, a streamed reply, etc). A single
-/// write can be followed by tens of seconds of silence — a slow bash
-/// command, a web fetch, or just the model thinking — with no new bytes on
-/// disk even though the session is very much still working. An 8s window
-/// (this monitor's original value) mistook those pauses for "idle", and made
-/// concurrent sessions look like they were never active at the same time
-/// (each writes on its own schedule, so a narrow window rarely catches two
-/// at once). The window is widened accordingly — see `activeWindow` below.
 @MainActor
 final class ClaudeCodeActivityMonitor: ObservableObject {
     @Published private(set) var sessions: [ClaudeCodeSessionStatus] = []
@@ -33,7 +25,11 @@ final class ClaudeCodeActivityMonitor: ObservableObject {
     private let activeWindow: TimeInterval
     private var pollTimer: Timer?
     private var animationTimer: Timer?
+    private var streamRef: FSEventStreamRef?
     private var titleCache: [String: String] = [:]
+    
+    private var lastPollTime = Date.distantPast
+    private var pendingPollTask: Task<Void, Never>?
 
     init(
         directory: URL = ClaudeCodeTranscriptScanner.projectsDirectory,
@@ -50,6 +46,12 @@ final class ClaudeCodeActivityMonitor: ObservableObject {
     deinit {
         pollTimer?.invalidate()
         animationTimer?.invalidate()
+        pendingPollTask?.cancel()
+        if let streamRef = streamRef {
+            FSEventStreamStop(streamRef)
+            FSEventStreamInvalidate(streamRef)
+            FSEventStreamRelease(streamRef)
+        }
     }
 
     var activeSessions: [ClaudeCodeSessionStatus] {
@@ -58,21 +60,100 @@ final class ClaudeCodeActivityMonitor: ObservableObject {
 
     func start() {
         pollTimer?.invalidate()
-        Task { await poll() }
-        let timer = Timer(timeInterval: 1.5, repeats: true) { [weak self] _ in
+        stopWatcher()
+        
+        startWatcher()
+        
+        // Slow fallback timer (every 15 seconds) to guarantee robustness
+        let timer = Timer(timeInterval: 15.0, repeats: true) { [weak self] _ in
             Task { @MainActor in await self?.poll() }
         }
         RunLoop.main.add(timer, forMode: .common)
         pollTimer = timer
+        
+        Task { await poll() }
     }
 
     func stop() {
         pollTimer?.invalidate()
         pollTimer = nil
+        pendingPollTask?.cancel()
+        pendingPollTask = nil
+        stopWatcher()
         stopAnimation()
     }
 
+    private func scheduleThrottlePoll() {
+        guard pendingPollTask == nil else { return }
+        
+        let now = Date()
+        let timeSinceLast = now.timeIntervalSince(lastPollTime)
+        let delay = max(0.0, 1.2 - timeSinceLast)
+        
+        pendingPollTask = Task {
+            if delay > 0 {
+                try? await Task.sleep(nanoseconds: UInt64(delay * 1_000_000_000))
+            }
+            guard !Task.isCancelled else { return }
+            await self.poll()
+            self.pendingPollTask = nil
+        }
+    }
+
+    private func startWatcher() {
+        let path = directory.path
+        let pathsToWatch = [path] as CFArray
+        
+        var context = FSEventStreamContext(
+            version: 0,
+            info: UnsafeMutableRawPointer(Unmanaged.passUnretained(self).toOpaque()),
+            retain: nil,
+            release: nil,
+            copyDescription: nil
+        )
+        
+        let callback: FSEventStreamCallback = { (
+            streamRef,
+            clientCallBackInfo,
+            numEvents,
+            eventPaths,
+            eventFlags,
+            eventIds
+        ) in
+            guard let clientCallBackInfo = clientCallBackInfo else { return }
+            let monitor = Unmanaged<ClaudeCodeActivityMonitor>.fromOpaque(clientCallBackInfo).takeUnretainedValue()
+            Task { @MainActor in
+                monitor.scheduleThrottlePoll()
+            }
+        }
+        
+        streamRef = FSEventStreamCreate(
+            kCFAllocatorDefault,
+            callback,
+            &context,
+            pathsToWatch,
+            FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
+            1.2, // Latency: 1.2s (Coalesce events inside macOS system level)
+            FSEventStreamCreateFlags(kFSEventStreamCreateFlagFileEvents | kFSEventStreamCreateFlagNoDefer)
+        )
+        
+        if let streamRef = streamRef {
+            FSEventStreamSetDispatchQueue(streamRef, DispatchQueue.main)
+            FSEventStreamStart(streamRef)
+        }
+    }
+
+    private func stopWatcher() {
+        if let streamRef = streamRef {
+            FSEventStreamStop(streamRef)
+            FSEventStreamInvalidate(streamRef)
+            FSEventStreamRelease(streamRef)
+            self.streamRef = nil
+        }
+    }
+
     private func poll() async {
+        lastPollTime = Date()
         let directory = self.directory
         let window = self.activeWindow
         let cachedTitles = self.titleCache
@@ -98,10 +179,10 @@ final class ClaudeCodeActivityMonitor: ObservableObject {
 
     private func startAnimation() {
         guard animationTimer == nil else { return }
-        let timer = Timer(timeInterval: 0.1, repeats: true) { [weak self] _ in
+        let timer = Timer(timeInterval: 0.2, repeats: true) { [weak self] _ in
             Task { @MainActor in
                 guard let self else { return }
-                self.animationPhase = (self.animationPhase + 0.1).truncatingRemainder(dividingBy: 2)
+                self.animationPhase = (self.animationPhase + 0.2).truncatingRemainder(dividingBy: 2)
             }
         }
         RunLoop.main.add(timer, forMode: .common)
@@ -174,17 +255,67 @@ final class ClaudeCodeActivityMonitor: ObservableObject {
                     newTitles[sessionID] = extracted
                 }
 
+                let info = parseSessionFile(fileURL: fileURL)
+
                 sessions.append(ClaudeCodeSessionStatus(
                     id: sessionID,
                     displayName: title ?? friendlyProjectName(from: projectDir.lastPathComponent),
                     isActive: isActive,
-                    lastActivity: modified
+                    lastActivity: modified,
+                    model: cleanModelName(info.model),
+                    totalTokens: info.totalTokens
                 ))
             }
         }
 
         sessions.sort { $0.lastActivity > $1.lastActivity }
         return ScanResult(sessions: sessions, newlyResolvedTitles: newTitles)
+    }
+
+    struct SessionTranscriptInfo {
+        let model: String?
+        let totalTokens: Int
+    }
+
+    nonisolated static func parseSessionFile(fileURL: URL) -> SessionTranscriptInfo {
+        guard let contents = try? String(contentsOf: fileURL, encoding: .utf8) else {
+            return SessionTranscriptInfo(model: nil, totalTokens: 0)
+        }
+        var model: String?
+        var total = 0
+        var seenMessageIDs = Set<String>()
+        
+        contents.enumerateLines { line, _ in
+            guard line.contains("\"type\":\"assistant\"") else { return } // Fast pre-filter!
+            guard let data = line.data(using: .utf8),
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+            else { return }
+            
+            if obj["type"] as? String == "assistant",
+               let message = obj["message"] as? [String: Any],
+               let messageID = message["id"] as? String,
+               let usage = message["usage"] as? [String: Any] {
+                
+                guard seenMessageIDs.insert(messageID).inserted else { return }
+                
+                let input = usage["input_tokens"] as? Int ?? 0
+                let output = usage["output_tokens"] as? Int ?? 0
+                let cacheWrite = usage["cache_creation_input_tokens"] as? Int ?? 0
+                let cacheRead = usage["cache_read_input_tokens"] as? Int ?? 0
+                let turnTotal = input + output + cacheWrite + cacheRead
+                
+                total += turnTotal
+                
+                if let modelStr = message["model"] as? String, modelStr != "<synthetic>" {
+                    model = modelStr
+                }
+            }
+        }
+        return SessionTranscriptInfo(model: model, totalTokens: total)
+    }
+
+    nonisolated static func cleanModelName(_ model: String?) -> String? {
+        return model
     }
 
     /// Reads a session transcript's first `ai-title` entry — the short,

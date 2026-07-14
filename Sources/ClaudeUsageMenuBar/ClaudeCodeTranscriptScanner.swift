@@ -9,6 +9,7 @@ enum ClaudeCodeTranscriptScanner {
     /// Returns nil for non-assistant lines, lines with no usage/model/timestamp,
     /// or the synthetic `<synthetic>` model placeholder some entries carry.
     static func parseLine(_ line: String) -> (id: String, record: ClaudeCodeUsageRecord)? {
+        guard line.contains("\"type\":\"assistant\"") else { return nil }
         guard let data = line.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
               obj["type"] as? String == "assistant",
@@ -24,6 +25,7 @@ enum ClaudeCodeTranscriptScanner {
         }
 
         let record = ClaudeCodeUsageRecord(
+            messageID: messageID,
             date: date,
             model: model,
             inputTokens: usage["input_tokens"] as? Int ?? 0,

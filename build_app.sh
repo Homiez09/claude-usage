@@ -14,9 +14,11 @@ swift build -c release
 echo "==> Assembling ${APP_BUNDLE}..."
 rm -rf "${APP_BUNDLE}"
 mkdir -p "${APP_BUNDLE}/Contents/MacOS"
+mkdir -p "${APP_BUNDLE}/Contents/Resources"
 
 cp ".build/release/${APP_NAME}" "${APP_BUNDLE}/Contents/MacOS/${APP_NAME}"
 cp "Resources/Info.plist" "${APP_BUNDLE}/Contents/Info.plist"
+cp "Resources/AppIcon.icns" "${APP_BUNDLE}/Contents/Resources/AppIcon.icns"
 
 # Ad-hoc code sign so Gatekeeper/Keychain treat this as a stable, consistent
 # identity across rebuilds (otherwise every rebuild looks like a new app to

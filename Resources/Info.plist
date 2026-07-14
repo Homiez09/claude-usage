@@ -28,5 +28,7 @@
     <string>Claude Usage เปิดเว็บเซิร์ฟเวอร์ในเครือข่ายบ้านเพื่อให้เปิดดูข้อมูลการใช้งานจาก iPhone ผ่าน Safari ได้โดยไม่ต้องติดตั้งแอปเพิ่ม</string>
     <key>NSPrincipalClass</key>
     <string>NSApplication</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
 </dict>
 </plist>

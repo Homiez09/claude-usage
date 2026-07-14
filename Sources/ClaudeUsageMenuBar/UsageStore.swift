@@ -10,6 +10,16 @@ final class UsageStore: ObservableObject {
     let activityMonitor: ClaudeCodeActivityMonitor
     let historyStore: ClaudeCodeHistoryStore
 
+    @Published var barWidth: Double {
+        didSet { UserDefaults.standard.set(barWidth, forKey: "PrefBarWidth") }
+    }
+    @Published var showSessionBar: Bool {
+        didSet { UserDefaults.standard.set(showSessionBar, forKey: "PrefShowSessionBar") }
+    }
+    @Published var showWeeklyBar: Bool {
+        didSet { UserDefaults.standard.set(showWeeklyBar, forKey: "PrefShowWeeklyBar") }
+    }
+
     private let service: ClaudeUsageService
     private let keychain: KeychainHelper
     private var timer: Timer?
@@ -28,6 +38,12 @@ final class UsageStore: ObservableObject {
         self.service = service
         self.keychain = keychain
         self.refreshInterval = refreshInterval
+        
+        let savedBarWidth = UserDefaults.standard.double(forKey: "PrefBarWidth")
+        self.barWidth = savedBarWidth == 0 ? 26.0 : savedBarWidth
+        self.showSessionBar = UserDefaults.standard.object(forKey: "PrefShowSessionBar") == nil ? true : UserDefaults.standard.bool(forKey: "PrefShowSessionBar")
+        self.showWeeklyBar = UserDefaults.standard.object(forKey: "PrefShowWeeklyBar") == nil ? true : UserDefaults.standard.bool(forKey: "PrefShowWeeklyBar")
+
         let activityMonitor = activityMonitor ?? ClaudeCodeActivityMonitor()
         self.activityMonitor = activityMonitor
         let historyStore = historyStore ?? ClaudeCodeHistoryStore()

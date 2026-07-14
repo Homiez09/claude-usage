@@ -26,7 +26,10 @@ private struct MenuBarLabel: View {
             weeklyPercent: store.weeklyPercent,
             countdownText: ResetDescriber.shortCountdown(store.sessionResetsAt),
             hasError: hasError,
-            activityPhase: activityMonitor.isActive ? activityMonitor.animationPhase : nil
+            activityPhase: activityMonitor.isActive ? activityMonitor.animationPhase : nil,
+            barWidth: store.barWidth,
+            showSessionBar: store.showSessionBar,
+            showWeeklyBar: store.showWeeklyBar
         ))
         .renderingMode(.original)
     }

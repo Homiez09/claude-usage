@@ -11,6 +11,7 @@ final class LocalWebServer {
 
     private weak var store: UsageStore?
     private var listener: NWListener?
+    private var connections: [NWConnection] = []
     let port: UInt16
 
     private(set) var isRunning = false
@@ -18,6 +19,13 @@ final class LocalWebServer {
     init(store: UsageStore, port: UInt16 = LocalWebServer.defaultPort) {
         self.store = store
         self.port = port
+    }
+
+    deinit {
+        listener?.cancel()
+        for connection in connections {
+            connection.cancel()
+        }
     }
 
     func start() {
@@ -56,10 +64,15 @@ final class LocalWebServer {
     func stop() {
         listener?.cancel()
         listener = nil
+        for connection in connections {
+            connection.cancel()
+        }
+        connections.removeAll()
         isRunning = false
     }
 
     private func handle(_ connection: NWConnection) {
+        connections.append(connection)
         connection.start(queue: .main)
         receive(on: connection, buffered: Data())
     }
@@ -84,7 +97,7 @@ final class LocalWebServer {
                 }
 
                 if isComplete || error != nil {
-                    connection.cancel()
+                    self.close(connection)
                     return
                 }
                 self.receive(on: connection, buffered: buffer)
@@ -112,20 +125,35 @@ final class LocalWebServer {
 
         connection.send(
             content: response.data(using: .utf8),
-            completion: .contentProcessed { _ in
-                connection.cancel()
+            completion: .contentProcessed { [weak self] _ in
+                MainActor.assumeIsolated {
+                    self?.close(connection)
+                }
             }
         )
     }
 
+    private func close(_ connection: NWConnection) {
+        connection.cancel()
+        connections.removeAll { $0 === connection }
+    }
+
     private var currentSnapshotJSON: String {
         guard let store else { return "{}" }
+        let activeAgentSessions = store.activityMonitor.activeSessions.map { session -> String in
+            var label = session.displayName
+            if let model = session.model {
+                label += " (\(model))"
+            }
+            label += " · \(session.totalTokens.formatted()) tokens"
+            return label
+        }
         let snapshot = UsageSnapshotBuilder.build(
             hasSessionKey: store.hasSessionKey,
             usage: store.usage,
             errorMessage: store.errorMessage,
             lastUpdated: store.lastUpdated,
-            activeAgentSessions: store.activityMonitor.activeSessions.map(\.displayName)
+            activeAgentSessions: activeAgentSessions
         )
         return UsageSnapshotBuilder.encodeJSON(snapshot)
     }
@@ -215,7 +243,8 @@ final class LocalWebServer {
       .logo-badge {
         width: 40px; height: 40px; border-radius: 12px; flex-shrink: 0;
         display: flex; align-items: center; justify-content: center;
-        background: linear-gradient(135deg, var(--brand-1), var(--brand-2));
+        background: var(--card);
+        border: 1px solid var(--card-border);
         box-shadow: var(--shadow);
       }
       #claudeLogo { width: 24px; height: 24px; will-change: transform; }
@@ -246,10 +275,19 @@ final class LocalWebServer {
 
       /* ---- Active sessions ---- */
       .agent-row {
-        display: flex; align-items: center; gap: 8px;
-        font-size: 13px; padding: 5px 0;
+        display: flex; align-items: flex-start; gap: 8px;
+        padding: 5px 0;
       }
-      .agent-row span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 500; }
+      .agent-row-meta {
+        display: flex; flex-direction: column; min-width: 0;
+      }
+      .agent-row-title {
+        font-size: 13px; font-weight: 600;
+        overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      }
+      .agent-row-model {
+        font-size: 11px; color: var(--muted); margin-top: 2px;
+      }
       .agents-empty { display: flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); padding: 5px 0; }
       .pulsing-dot {
         width: 7px; height: 7px; border-radius: 50%;
@@ -418,9 +456,18 @@ final class LocalWebServer {
             updateLogo(activeAgents.length);
 
             agentsEl.innerHTML = activeAgents.length > 0
-              ? activeAgents.map(name =>
-                  '<div class="agent-row"><div class="pulsing-dot"></div><span>' + escapeHTML(name) + '</span></div>'
-                ).join('')
+              ? activeAgents.map(raw => {
+                  const parts = raw.split('|');
+                  const title = parts[0];
+                  const model = parts[1] || '';
+                  return '<div class="agent-row">' +
+                           '<div class="pulsing-dot" style="margin-top:5px;"></div>' +
+                           '<div class="agent-row-meta">' +
+                             '<span class="agent-row-title">' + escapeHTML(title) + '</span>' +
+                             (model ? '<span class="agent-row-model">' + escapeHTML(model) + '</span>' : '') +
+                           '</div>' +
+                         '</div>';
+                }).join('')
               : '<div class="agents-empty"><div class="idle-dot"></div><span>Claude Code ว่างอยู่</span></div>';
 
             if (!data.hasSessionKey) {

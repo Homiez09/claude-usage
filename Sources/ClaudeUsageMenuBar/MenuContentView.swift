@@ -145,15 +145,26 @@ struct MenuContentView: View {
                     .font(.caption2)
                     .foregroundColor(.secondary)
             } else {
-                VStack(alignment: .leading, spacing: 4) {
+                VStack(alignment: .leading, spacing: 5) {
                     ForEach(active) { session in
-                        HStack(spacing: 6) {
-                            PulsingDot()
-                            Text(session.displayName)
-                                .font(.caption2)
-                                .foregroundColor(.primary)
-                                .lineLimit(1)
-                                .truncationMode(.tail)
+                        VStack(alignment: .leading, spacing: 2) {
+                            HStack(spacing: 6) {
+                                PulsingDot()
+                                Text(session.displayName)
+                                    .font(.caption2.weight(.semibold))
+                                    .foregroundColor(.primary)
+                                    .lineLimit(1)
+                                    .truncationMode(.tail)
+                            }
+                            
+                            if let model = session.model {
+                                HStack(spacing: 6) {
+                                    Spacer().frame(width: 12)
+                                    Text(model)
+                                        .font(.system(size: 9))
+                                        .foregroundColor(.secondary)
+                                }
+                            }
                         }
                     }
                 }
@@ -163,7 +174,7 @@ struct MenuContentView: View {
         .padding(.horizontal, 10)
         .padding(.vertical, 6)
         .background(
-            Capsule()
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
                 .fill(active.isEmpty ? Color.secondary.opacity(0.08) : Color.green.opacity(0.12))
         )
     }
@@ -172,8 +183,12 @@ struct MenuContentView: View {
         HStack(spacing: 10) {
             ZStack {
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(Palette.brandGradient)
+                    .fill(Color(NSColor.controlBackgroundColor))
                     .frame(width: 30, height: 30)
+                    .overlay(
+                        RoundedRectangle(cornerRadius: 9, style: .continuous)
+                            .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                    )
                 if let logo = ClaudeLogo.image {
                     Image(nsImage: logo)
                         .resizable()
@@ -266,6 +281,21 @@ struct MenuContentView: View {
         .cardStyle()
     }
 
+    private var memoryUsageString: String {
+        var info = mach_task_basic_info()
+        var count = mach_msg_type_number_t(MemoryLayout<mach_task_basic_info>.size)/4
+        let kerr: kern_return_t = withUnsafeMutablePointer(to: &info) {
+            $0.withMemoryRebound(to: integer_t.self, capacity: Int(count)) {
+                task_info(mach_task_self_, task_flavor_t(MACH_TASK_BASIC_INFO), $0, &count)
+            }
+        }
+        if kerr == KERN_SUCCESS {
+            let mb = Double(info.resident_size) / 1024.0 / 1024.0
+            return String(format: "%.1f MB", mb)
+        }
+        return "N/A"
+    }
+
     private var footer: some View {
         HStack(spacing: 8) {
             Button {
@@ -275,6 +305,15 @@ struct MenuContentView: View {
                     .font(.caption.weight(.medium))
             }
             .buttonStyle(.bordered)
+
+            Spacer()
+
+            HStack(spacing: 4) {
+                Image(systemName: "cpu")
+                Text(memoryUsageString)
+            }
+            .font(.caption2)
+            .foregroundColor(.secondary)
 
             Spacer()
 

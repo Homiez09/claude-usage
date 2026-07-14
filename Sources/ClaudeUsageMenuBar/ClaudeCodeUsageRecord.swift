@@ -4,12 +4,31 @@ import Foundation
 /// Deliberately carries no conversation content — only the numbers needed for
 /// aggregation and cost estimation.
 struct ClaudeCodeUsageRecord {
+    let messageID: String
     let date: Date
     let model: String
     let inputTokens: Int
     let outputTokens: Int
     let cacheCreationTokens: Int
     let cacheReadTokens: Int
+
+    init(
+        messageID: String = "",
+        date: Date,
+        model: String,
+        inputTokens: Int,
+        outputTokens: Int,
+        cacheCreationTokens: Int,
+        cacheReadTokens: Int
+    ) {
+        self.messageID = messageID
+        self.date = date
+        self.model = model
+        self.inputTokens = inputTokens
+        self.outputTokens = outputTokens
+        self.cacheCreationTokens = cacheCreationTokens
+        self.cacheReadTokens = cacheReadTokens
+    }
 
     var totalTokens: Int {
         inputTokens + outputTokens + cacheCreationTokens + cacheReadTokens

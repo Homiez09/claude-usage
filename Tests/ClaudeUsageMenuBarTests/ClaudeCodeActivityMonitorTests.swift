@@ -173,6 +173,51 @@ final class ClaudeCodeActivityMonitorStaticTests: XCTestCase {
         XCTAssertTrue(result.sessions.allSatisfy(\.isActive))
     }
 
+    func testScanSessionsResolvesModelForActiveSession() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let transcript = """
+        {"type":"assistant","message":{"id":"msg_0","model":"claude-sonnet-5","usage":{}}}
+        """
+        _ = try makeProjectFile(in: dir, project: "-Users-me-project", sessionID: "session-1", content: transcript)
+
+        let result = ClaudeCodeActivityMonitor.scanSessions(
+            directory: dir,
+            activeWindow: 8,
+            cachedTitles: [:],
+            now: Date()
+        )
+
+        XCTAssertTrue(result.sessions[0].isActive)
+        XCTAssertEqual(result.sessions[0].model, "claude-sonnet-5")
+    }
+
+    /// Guards the perf fix: re-reading and re-parsing every historical
+    /// transcript's full content on every poll (to resolve a `model` that's
+    /// never shown for inactive sessions anyway) was the app's main memory/CPU
+    /// cost, so inactive sessions must never pay for `parseSessionFile`.
+    func testScanSessionsDoesNotResolveModelForInactiveSession() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let transcript = """
+        {"type":"assistant","message":{"id":"msg_0","model":"claude-sonnet-5","usage":{}}}
+        """
+        _ = try makeProjectFile(in: dir, project: "-Users-me-project", sessionID: "session-1", content: transcript)
+
+        let farFuture = Date().addingTimeInterval(60)
+        let result = ClaudeCodeActivityMonitor.scanSessions(
+            directory: dir,
+            activeWindow: 8,
+            cachedTitles: [:],
+            now: farFuture
+        )
+
+        XCTAssertFalse(result.sessions[0].isActive)
+        XCTAssertNil(result.sessions[0].model)
+    }
+
     func testExtractTitleReturnsNilWhenAbsent() throws {
         let dir = try makeTempDirectory()
         defer { try? FileManager.default.removeItem(at: dir) }
@@ -188,6 +233,83 @@ final class ClaudeCodeActivityMonitorStaticTests: XCTestCase {
     func testFriendlyProjectNameStripsHomePrefixAndDash() {
         let name = ClaudeCodeActivityMonitor.friendlyProjectName(from: "-tmp-some-project")
         XCTAssertEqual(name, "tmp some project")
+    }
+
+    func testScanSessionsIncludesActiveSubagentLabeledFromMeta() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let sessionID = "session-1"
+        _ = try makeProjectFile(in: dir, project: "-Users-me-project", sessionID: sessionID)
+
+        let subagentsDir = dir
+            .appendingPathComponent("-Users-me-project")
+            .appendingPathComponent(sessionID)
+            .appendingPathComponent("subagents")
+        try FileManager.default.createDirectory(at: subagentsDir, withIntermediateDirectories: true)
+        try "{}".write(to: subagentsDir.appendingPathComponent("agent-abc123.jsonl"), atomically: true, encoding: .utf8)
+        try #"{"agentType":"general-purpose","description":"Log work to brain"}"#.write(
+            to: subagentsDir.appendingPathComponent("agent-abc123.meta.json"),
+            atomically: true,
+            encoding: .utf8
+        )
+
+        let result = ClaudeCodeActivityMonitor.scanSessions(
+            directory: dir,
+            activeWindow: 8,
+            cachedTitles: [:],
+            now: Date()
+        )
+
+        XCTAssertEqual(result.sessions.count, 2)
+        let subagent = try XCTUnwrap(result.sessions.first { $0.isSubagent })
+        XCTAssertTrue(subagent.isActive)
+        XCTAssertEqual(subagent.displayName, "Log work to brain")
+        XCTAssertEqual(subagent.subagentType, "general-purpose")
+
+        let mainSession = try XCTUnwrap(result.sessions.first { !$0.isSubagent })
+        XCTAssertNil(mainSession.subagentType)
+    }
+
+    func testScanSessionsIgnoresStaleSubagent() throws {
+        let dir = try makeTempDirectory()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let sessionID = "session-1"
+        _ = try makeProjectFile(in: dir, project: "-Users-me-project", sessionID: sessionID)
+
+        let subagentsDir = dir
+            .appendingPathComponent("-Users-me-project")
+            .appendingPathComponent(sessionID)
+            .appendingPathComponent("subagents")
+        try FileManager.default.createDirectory(at: subagentsDir, withIntermediateDirectories: true)
+        try "{}".write(to: subagentsDir.appendingPathComponent("agent-abc123.jsonl"), atomically: true, encoding: .utf8)
+
+        let farFuture = Date().addingTimeInterval(60)
+        let result = ClaudeCodeActivityMonitor.scanSessions(
+            directory: dir,
+            activeWindow: 8,
+            cachedTitles: [:],
+            now: farFuture
+        )
+
+        let subagent = try XCTUnwrap(result.sessions.first { $0.isSubagent })
+        XCTAssertFalse(subagent.isActive)
+    }
+
+    func testSubagentDisplayNamePrefersDescriptionThenAgentTypeThenDefault() {
+        XCTAssertEqual(
+            ClaudeCodeActivityMonitor.subagentDisplayName(agentType: "general-purpose", description: "Do the thing"),
+            "Do the thing"
+        )
+        XCTAssertEqual(
+            ClaudeCodeActivityMonitor.subagentDisplayName(agentType: "general-purpose", description: nil),
+            "general-purpose"
+        )
+        XCTAssertEqual(
+            ClaudeCodeActivityMonitor.subagentDisplayName(agentType: nil, description: nil),
+            "Subagent"
+        )
     }
 }
 

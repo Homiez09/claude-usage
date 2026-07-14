@@ -93,4 +93,14 @@ final class UsageSnapshotTests: XCTestCase {
         let unknown = LocalWebServer.route(path: "/whatever", snapshotJSON: "unused")
         XCTAssertEqual(unknown.contentType, "text/html; charset=utf-8")
     }
+
+    func testRouteReturnsJSONForApiAgentsPath() {
+        let result = LocalWebServer.route(
+            path: "/api/agents",
+            snapshotJSON: "unused",
+            agentsJSON: { "[{\"name\":\"brain-writer\"}]" }
+        )
+        XCTAssertEqual(result.contentType, "application/json; charset=utf-8")
+        XCTAssertEqual(result.body, "[{\"name\":\"brain-writer\"}]")
+    }
 }

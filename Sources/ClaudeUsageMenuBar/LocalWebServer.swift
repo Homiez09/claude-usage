@@ -114,7 +114,8 @@ final class LocalWebServer {
             path: path,
             snapshotJSON: currentSnapshotJSON,
             historyJSON: { [weak self] granularityKey in self?.historyJSON(granularityQueryKey: granularityKey) ?? "{}" },
-            projectsJSON: { [weak self] in self?.projectsJSON() ?? "[]" }
+            projectsJSON: { [weak self] in self?.projectsJSON() ?? "[]" },
+            agentsJSON: { [weak self] in self?.agentsJSON() ?? "[]" }
         )
 
         var response = "HTTP/1.1 200 OK\r\n"
@@ -175,6 +176,19 @@ final class LocalWebServer {
         return "[]"
     }
 
+    /// Agent definition files are tiny and change rarely (unlike
+    /// `.claude/projects` transcripts), so re-scanning `~/.claude/agents`
+    /// on every request here is cheap — no caching needed.
+    private func agentsJSON() -> String {
+        guard let store else { return "[]" }
+        let activeSubagentTypes = Set(store.activityMonitor.activeSessions.compactMap(\.subagentType))
+        let snapshots = InstalledAgentSnapshotBuilder.build(
+            agents: InstalledAgentScanner.scan(),
+            activeSubagentTypes: activeSubagentTypes
+        )
+        return InstalledAgentSnapshotBuilder.encodeJSON(snapshots)
+    }
+
     /// Pure routing logic, separated from the NWConnection plumbing above so it's testable
     /// without opening a real socket. `path` may include a query string (e.g.
     /// "/api/history?granularity=month") — the raw HTTP request-line target.
@@ -182,7 +196,8 @@ final class LocalWebServer {
         path: String,
         snapshotJSON: @autoclosure () -> String,
         historyJSON: (String) -> String = { _ in "{}" },
-        projectsJSON: () -> String = { "[]" }
+        projectsJSON: () -> String = { "[]" },
+        agentsJSON: () -> String = { "[]" }
     ) -> (contentType: String, body: String) {
         let parts = path.split(separator: "?", maxSplits: 1)
         let basePath = String(parts.first ?? "")
@@ -196,6 +211,8 @@ final class LocalWebServer {
             return ("application/json; charset=utf-8", historyJSON(granularityKey))
         case "/api/projects":
             return ("application/json; charset=utf-8", projectsJSON())
+        case "/api/agents":
+            return ("application/json; charset=utf-8", agentsJSON())
         default:
             return ("text/html; charset=utf-8", Self.htmlPage)
         }
@@ -409,6 +426,12 @@ final class LocalWebServer {
         <div id="projectsBreakdown">Loading…</div>
       </div>
 
+      <div class="card">
+        <h2>Subagents ที่ติดตั้งไว้</h2>
+        <div class="history-hint">จาก ~/.claude/agents บนเครื่อง Mac</div>
+        <div id="installedAgents">Loading…</div>
+      </div>
+
       <footer class="credit">Claude Usage · local network only</footer>
     </div>
 
@@ -586,6 +609,26 @@ final class LocalWebServer {
             projectsEl.innerHTML = '<div class="error">โหลดข้อมูลโปรเจกต์ไม่ได้</div>';
           }
         }
+        async function refreshInstalledAgents() {
+          const el = document.getElementById('installedAgents');
+          try {
+            const res = await fetch('/api/agents', { cache: 'no-store' });
+            const data = await res.json();
+            el.innerHTML = data.length > 0
+              ? data.map(a =>
+                  '<div class="agent-row">' +
+                    '<div class="' + (a.isRunning ? 'pulsing-dot' : 'idle-dot') + '" style="margin-top:5px;"></div>' +
+                    '<div class="agent-row-meta">' +
+                      '<span class="agent-row-title">' + escapeHTML(a.name) + '</span>' +
+                      (a.description ? '<span class="agent-row-model">' + escapeHTML(a.description) + '</span>' : '') +
+                    '</div>' +
+                  '</div>'
+                ).join('')
+              : '<div class="agents-empty"><div class="idle-dot"></div><span>ไม่พบ agent ที่ติดตั้งไว้</span></div>';
+          } catch (e) {
+            el.innerHTML = '<div class="error">โหลดรายชื่อ agent ไม่ได้</div>';
+          }
+        }
         document.getElementById('historyGranularity').addEventListener('change', e => {
           historyGranularity = e.target.value;
           refreshHistory();
@@ -594,9 +637,11 @@ final class LocalWebServer {
         refresh();
         refreshHistory();
         refreshProjects();
+        refreshInstalledAgents();
         setInterval(refresh, 3000);
         setInterval(refreshHistory, 20000);
         setInterval(refreshProjects, 20000);
+        setInterval(refreshInstalledAgents, 5000);
       </script>
     </body>
     </html>

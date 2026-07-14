@@ -1,15 +1,20 @@
 import Foundation
 import CoreServices
 
-/// One Claude Code session (one `claude` process/terminal), labeled with its
-/// auto-generated title when known.
+/// One Claude Code session (one `claude` process/terminal, or one subagent
+/// spawned by a session), labeled with its auto-generated title when known.
 struct ClaudeCodeSessionStatus: Identifiable, Equatable {
     let id: String
     let displayName: String
     let isActive: Bool
     let lastActivity: Date
     let model: String?
-    let totalTokens: Int
+    /// `true` for a subagent transcript (`<session>/subagents/agent-*.jsonl`),
+    /// `false` for a top-level user-facing session.
+    let isSubagent: Bool
+    /// The subagent's type (e.g. "general-purpose"), from its `.meta.json`
+    /// sidecar. Always `nil` for top-level sessions.
+    let subagentType: String?
 }
 
 /// Detects which Claude Code sessions are actively working right now, across
@@ -211,8 +216,8 @@ final class ClaudeCodeActivityMonitor: ObservableObject {
     }
 
     /// Enumerates every `<session>.jsonl` directly under each project
-    /// directory (never the nested `subagents/` transcripts — those aren't
-    /// separate user-facing sessions), determines which are active, and
+    /// directory, plus every subagent transcript nested at
+    /// `<session>/subagents/agent-*.jsonl`, determines which are active, and
     /// resolves a display name for each newly-seen active session.
     nonisolated static func scanSessions(
         directory: URL,
@@ -255,7 +260,14 @@ final class ClaudeCodeActivityMonitor: ObservableObject {
                     newTitles[sessionID] = extracted
                 }
 
-                let info = parseSessionFile(fileURL: fileURL)
+                // Full-content parse is only worth paying for on sessions that
+                // are actually active right now — historical/idle transcripts
+                // (the vast majority, once `~/.claude/projects` accumulates
+                // weeks of history) never have their model shown anywhere, so
+                // re-reading and re-parsing their entire file on every poll
+                // was pure waste (and the biggest source of this monitor's
+                // memory/CPU footprint).
+                let info = isActive ? parseSessionFile(fileURL: fileURL) : SessionTranscriptInfo(model: nil)
 
                 sessions.append(ClaudeCodeSessionStatus(
                     id: sessionID,
@@ -263,8 +275,14 @@ final class ClaudeCodeActivityMonitor: ObservableObject {
                     isActive: isActive,
                     lastActivity: modified,
                     model: cleanModelName(info.model),
-                    totalTokens: info.totalTokens
+                    isSubagent: false,
+                    subagentType: nil
                 ))
+            }
+
+            for entryURL in files {
+                guard (try? entryURL.resourceValues(forKeys: [.isDirectoryKey]))?.isDirectory == true else { continue }
+                sessions.append(contentsOf: scanSubagentSessions(sessionDir: entryURL, cutoff: cutoff))
             }
         }
 
@@ -272,46 +290,97 @@ final class ClaudeCodeActivityMonitor: ObservableObject {
         return ScanResult(sessions: sessions, newlyResolvedTitles: newTitles)
     }
 
-    struct SessionTranscriptInfo {
-        let model: String?
-        let totalTokens: Int
+    /// Scans `<sessionDir>/subagents/agent-*.jsonl` for one session directory,
+    /// pairing each transcript with its `.meta.json` sidecar (`agentType`,
+    /// `description`) to produce a human-readable label.
+    nonisolated static func scanSubagentSessions(sessionDir: URL, cutoff: Date) -> [ClaudeCodeSessionStatus] {
+        let fileManager = FileManager.default
+        let subagentsDir = sessionDir.appendingPathComponent("subagents")
+        guard let files = try? fileManager.contentsOfDirectory(
+            at: subagentsDir,
+            includingPropertiesForKeys: [.contentModificationDateKey]
+        ) else {
+            return []
+        }
+
+        var result: [ClaudeCodeSessionStatus] = []
+        for fileURL in files where fileURL.pathExtension == "jsonl" {
+            guard let values = try? fileURL.resourceValues(forKeys: [.contentModificationDateKey]),
+                  let modified = values.contentModificationDate
+            else {
+                continue
+            }
+
+            let isActive = modified > cutoff
+            let baseName = fileURL.deletingPathExtension().lastPathComponent
+            let meta = readSubagentMeta(baseName: baseName, in: subagentsDir)
+            // Same active-only gating as the top-level loop above — a subagent
+            // transcript stays on disk forever after it finishes, so without
+            // this every historical subagent run would get fully re-read and
+            // re-parsed on every poll too.
+            let info = isActive ? parseSessionFile(fileURL: fileURL) : SessionTranscriptInfo(model: nil)
+
+            result.append(ClaudeCodeSessionStatus(
+                id: "\(sessionDir.lastPathComponent)/\(baseName)",
+                displayName: subagentDisplayName(agentType: meta.agentType, description: meta.description),
+                isActive: isActive,
+                lastActivity: modified,
+                model: cleanModelName(info.model),
+                isSubagent: true,
+                subagentType: meta.agentType
+            ))
+        }
+        return result
     }
 
+    struct SubagentMeta: Decodable {
+        let agentType: String?
+        let description: String?
+    }
+
+    /// Reads `<baseName>.meta.json` next to a subagent transcript — written
+    /// once when the subagent is spawned, so no caching/staleness concerns.
+    nonisolated static func readSubagentMeta(baseName: String, in directory: URL) -> SubagentMeta {
+        let metaURL = directory.appendingPathComponent("\(baseName).meta.json")
+        guard let data = try? Data(contentsOf: metaURL),
+              let meta = try? JSONDecoder().decode(SubagentMeta.self, from: data)
+        else {
+            return SubagentMeta(agentType: nil, description: nil)
+        }
+        return meta
+    }
+
+    nonisolated static func subagentDisplayName(agentType: String?, description: String?) -> String {
+        if let description, !description.isEmpty { return description }
+        if let agentType, !agentType.isEmpty { return agentType }
+        return "Subagent"
+    }
+
+    struct SessionTranscriptInfo {
+        let model: String?
+    }
+
+    /// Full-content read of one transcript, kept only to find the most recent
+    /// model in use — callers must gate this to active sessions (see
+    /// `scanSessions`/`scanSubagentSessions`) since it loads the whole file.
     nonisolated static func parseSessionFile(fileURL: URL) -> SessionTranscriptInfo {
         guard let contents = try? String(contentsOf: fileURL, encoding: .utf8) else {
-            return SessionTranscriptInfo(model: nil, totalTokens: 0)
+            return SessionTranscriptInfo(model: nil)
         }
         var model: String?
-        var total = 0
-        var seenMessageIDs = Set<String>()
-        
+
         contents.enumerateLines { line, _ in
             guard line.contains("\"type\":\"assistant\"") else { return } // Fast pre-filter!
             guard let data = line.data(using: .utf8),
-                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any]
+                  let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
+                  obj["type"] as? String == "assistant",
+                  let message = obj["message"] as? [String: Any],
+                  let modelStr = message["model"] as? String,
+                  modelStr != "<synthetic>"
             else { return }
-            
-            if obj["type"] as? String == "assistant",
-               let message = obj["message"] as? [String: Any],
-               let messageID = message["id"] as? String,
-               let usage = message["usage"] as? [String: Any] {
-                
-                guard seenMessageIDs.insert(messageID).inserted else { return }
-                
-                let input = usage["input_tokens"] as? Int ?? 0
-                let output = usage["output_tokens"] as? Int ?? 0
-                let cacheWrite = usage["cache_creation_input_tokens"] as? Int ?? 0
-                let cacheRead = usage["cache_read_input_tokens"] as? Int ?? 0
-                let turnTotal = input + output + cacheWrite + cacheRead
-                
-                total += turnTotal
-                
-                if let modelStr = message["model"] as? String, modelStr != "<synthetic>" {
-                    model = modelStr
-                }
-            }
+            model = modelStr
         }
-        return SessionTranscriptInfo(model: model, totalTokens: total)
+        return SessionTranscriptInfo(model: model)
     }
 
     nonisolated static func cleanModelName(_ model: String?) -> String? {

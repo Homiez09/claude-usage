@@ -136,6 +136,28 @@ struct SettingsView: View {
 
             Divider()
 
+            VStack(alignment: .leading, spacing: 10) {
+                Text("เชื่อมต่อ Island Pulse (Dynamic Island บน iPhone)")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.secondary)
+
+                HStack {
+                    Text("API Token:")
+                        .font(.system(size: 12))
+                    Spacer()
+                    TextField("Bearer Token", text: $store.islandPulseToken)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(size: 11, design: .monospaced))
+                        .frame(width: 200)
+                }
+                
+                Text("คัดลอก Bearer Token ได้จากแอป Island Pulse บน iPhone")
+                    .font(.system(size: 10))
+                    .foregroundColor(.secondary)
+            }
+
+            Divider()
+
             HStack {
                 if store.hasSessionKey {
                     Button("ล้างค่า / ออกจากระบบ", role: .destructive) {

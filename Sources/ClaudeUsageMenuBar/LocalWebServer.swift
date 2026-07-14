@@ -113,7 +113,8 @@ final class LocalWebServer {
         let (contentType, body) = LocalWebServer.route(
             path: path,
             snapshotJSON: currentSnapshotJSON,
-            historyJSON: { [weak self] granularityKey in self?.historyJSON(granularityQueryKey: granularityKey) ?? "{}" }
+            historyJSON: { [weak self] granularityKey in self?.historyJSON(granularityQueryKey: granularityKey) ?? "{}" },
+            projectsJSON: { [weak self] in self?.projectsJSON() ?? "[]" }
         )
 
         var response = "HTTP/1.1 200 OK\r\n"
@@ -143,9 +144,8 @@ final class LocalWebServer {
         let activeAgentSessions = store.activityMonitor.activeSessions.map { session -> String in
             var label = session.displayName
             if let model = session.model {
-                label += " (\(model))"
+                label += "|\(model)"
             }
-            label += " · \(session.totalTokens.formatted()) tokens"
             return label
         }
         let snapshot = UsageSnapshotBuilder.build(
@@ -165,13 +165,24 @@ final class LocalWebServer {
         return UsageHistorySnapshotBuilder.encodeJSON(UsageHistorySnapshotBuilder.build(buckets: buckets, granularity: granularity))
     }
 
+    private func projectsJSON() -> String {
+        guard let store else { return "[]" }
+        let breakdown = store.historyStore.projectBreakdown()
+        if let data = try? JSONEncoder().encode(breakdown),
+           let json = String(data: data, encoding: .utf8) {
+            return json
+        }
+        return "[]"
+    }
+
     /// Pure routing logic, separated from the NWConnection plumbing above so it's testable
     /// without opening a real socket. `path` may include a query string (e.g.
     /// "/api/history?granularity=month") — the raw HTTP request-line target.
     nonisolated static func route(
         path: String,
         snapshotJSON: @autoclosure () -> String,
-        historyJSON: (String) -> String = { _ in "{}" }
+        historyJSON: (String) -> String = { _ in "{}" },
+        projectsJSON: () -> String = { "[]" }
     ) -> (contentType: String, body: String) {
         let parts = path.split(separator: "?", maxSplits: 1)
         let basePath = String(parts.first ?? "")
@@ -183,6 +194,8 @@ final class LocalWebServer {
             let query = parts.count > 1 ? String(parts[1]) : ""
             let granularityKey = queryValue(query, key: "granularity") ?? "day"
             return ("application/json; charset=utf-8", historyJSON(granularityKey))
+        case "/api/projects":
+            return ("application/json; charset=utf-8", projectsJSON())
         default:
             return ("text/html; charset=utf-8", Self.htmlPage)
         }
@@ -390,6 +403,12 @@ final class LocalWebServer {
         <div id="history">Loading…</div>
       </div>
 
+      <div class="card">
+        <h2>ค่าใช้จ่ายแยกตามโปรเจกต์</h2>
+        <div class="history-hint">สะสมแยกตามโฟลเดอร์โปรเจกต์</div>
+        <div id="projectsBreakdown">Loading…</div>
+      </div>
+
       <footer class="credit">Claude Usage · local network only</footer>
     </div>
 
@@ -545,6 +564,28 @@ final class LocalWebServer {
             historyEl.innerHTML = '<div class="error">โหลดประวัติไม่ได้</div>';
           }
         }
+        async function refreshProjects() {
+          const projectsEl = document.getElementById('projectsBreakdown');
+          try {
+            const res = await fetch('/api/projects', { cache: 'no-store' });
+            const data = await res.json();
+            if (data.length === 0) {
+              projectsEl.innerHTML = '<div class="error">ไม่มีข้อมูล</div>';
+              return;
+            }
+            projectsEl.innerHTML = data.map(p =>
+              '<div class="history-row">' +
+                '<span class="history-label">' + escapeHTML(p.name) + '</span>' +
+                '<span class="history-amounts">' +
+                  '<span class="history-cost">' + currencyFmt.format(p.costUSD) + '</span>' +
+                  '<span class="history-tokens">' + tokenFmt.format(p.tokens) + ' tokens</span>' +
+                '</span>' +
+              '</div>'
+            ).join('');
+          } catch (e) {
+            projectsEl.innerHTML = '<div class="error">โหลดข้อมูลโปรเจกต์ไม่ได้</div>';
+          }
+        }
         document.getElementById('historyGranularity').addEventListener('change', e => {
           historyGranularity = e.target.value;
           refreshHistory();
@@ -552,8 +593,10 @@ final class LocalWebServer {
 
         refresh();
         refreshHistory();
+        refreshProjects();
         setInterval(refresh, 3000);
         setInterval(refreshHistory, 20000);
+        setInterval(refreshProjects, 20000);
       </script>
     </body>
     </html>

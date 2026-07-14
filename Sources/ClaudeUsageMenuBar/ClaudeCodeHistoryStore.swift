@@ -107,11 +107,12 @@ final class ClaudeCodeHistoryStore: ObservableObject {
 
     nonisolated private static func parseFile(_ fileURL: URL) -> [ClaudeCodeUsageRecord] {
         guard let contents = try? String(contentsOf: fileURL, encoding: .utf8) else { return [] }
+        let projectName = fileURL.deletingLastPathComponent().lastPathComponent
         var fileRecords: [ClaudeCodeUsageRecord] = []
 
         contents.enumerateLines { line, _ in
             guard line.contains("\"type\":\"assistant\"") else { return } // Fast pre-filter!
-            guard let (_, record) = ClaudeCodeTranscriptScanner.parseLine(line) else { return }
+            guard let (_, record) = ClaudeCodeTranscriptScanner.parseLine(line, projectName: projectName) else { return }
             fileRecords.append(record)
         }
         return fileRecords
@@ -119,5 +120,22 @@ final class ClaudeCodeHistoryStore: ObservableObject {
 
     func buckets(for granularity: UsageHistoryGranularity) -> [UsageHistoryBucket] {
         ClaudeCodeUsageAggregator.aggregate(records, by: granularity)
+    }
+
+    struct ProjectBreakdownItem: Codable, Identifiable {
+        var id: String { name }
+        let name: String
+        let tokens: Int
+        let costUSD: Double
+    }
+
+    func projectBreakdown() -> [ProjectBreakdownItem] {
+        var breakdown: [String: (tokens: Int, cost: Double)] = [:]
+        for r in records {
+            let entry = breakdown[r.projectName, default: (0, 0.0)]
+            breakdown[r.projectName] = (entry.tokens + r.totalTokens, entry.cost + r.estimatedCostUSD)
+        }
+        return breakdown.map { ProjectBreakdownItem(name: $0.key, tokens: $0.value.tokens, costUSD: $0.value.cost) }
+            .sorted { $0.costUSD > $1.costUSD }
     }
 }

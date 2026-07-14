@@ -11,6 +11,7 @@ struct ClaudeCodeUsageRecord {
     let outputTokens: Int
     let cacheCreationTokens: Int
     let cacheReadTokens: Int
+    let projectName: String
 
     init(
         messageID: String = "",
@@ -19,7 +20,8 @@ struct ClaudeCodeUsageRecord {
         inputTokens: Int,
         outputTokens: Int,
         cacheCreationTokens: Int,
-        cacheReadTokens: Int
+        cacheReadTokens: Int,
+        projectName: String = "Unknown"
     ) {
         self.messageID = messageID
         self.date = date
@@ -28,6 +30,7 @@ struct ClaudeCodeUsageRecord {
         self.outputTokens = outputTokens
         self.cacheCreationTokens = cacheCreationTokens
         self.cacheReadTokens = cacheReadTokens
+        self.projectName = projectName
     }
 
     var totalTokens: Int {

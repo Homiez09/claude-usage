@@ -8,7 +8,7 @@ enum ClaudeCodeTranscriptScanner {
     ///
     /// Returns nil for non-assistant lines, lines with no usage/model/timestamp,
     /// or the synthetic `<synthetic>` model placeholder some entries carry.
-    static func parseLine(_ line: String) -> (id: String, record: ClaudeCodeUsageRecord)? {
+    static func parseLine(_ line: String, projectName: String = "Unknown") -> (id: String, record: ClaudeCodeUsageRecord)? {
         guard line.contains("\"type\":\"assistant\"") else { return nil }
         guard let data = line.data(using: .utf8),
               let obj = try? JSONSerialization.jsonObject(with: data) as? [String: Any],
@@ -31,7 +31,8 @@ enum ClaudeCodeTranscriptScanner {
             inputTokens: usage["input_tokens"] as? Int ?? 0,
             outputTokens: usage["output_tokens"] as? Int ?? 0,
             cacheCreationTokens: usage["cache_creation_input_tokens"] as? Int ?? 0,
-            cacheReadTokens: usage["cache_read_input_tokens"] as? Int ?? 0
+            cacheReadTokens: usage["cache_read_input_tokens"] as? Int ?? 0,
+            projectName: projectName
         )
         return (messageID, record)
     }
@@ -59,9 +60,10 @@ enum ClaudeCodeTranscriptScanner {
         for case let fileURL as URL in enumerator {
             guard fileURL.pathExtension == "jsonl" else { continue }
             guard let contents = try? String(contentsOf: fileURL, encoding: .utf8) else { continue }
+            let projectName = fileURL.deletingLastPathComponent().lastPathComponent
 
             contents.enumerateLines { line, _ in
-                guard let (messageID, record) = parseLine(line) else { return }
+                guard let (messageID, record) = parseLine(line, projectName: projectName) else { return }
                 guard seenMessageIDs.insert(messageID).inserted else { return }
                 records.append(record)
             }

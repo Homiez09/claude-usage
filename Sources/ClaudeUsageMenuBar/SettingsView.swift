@@ -4,7 +4,6 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var store: UsageStore
     @State private var isRefreshing = false
-    @State private var inputToken = ""
 
     private let providers: [LoginProvider] = [.claude]
 
@@ -137,57 +136,6 @@ struct SettingsView: View {
 
             Divider()
 
-            VStack(alignment: .leading, spacing: 10) {
-                Text("เชื่อมต่อ Island Pulse (Dynamic Island บน iPhone)")
-                    .font(.system(size: 11, weight: .bold))
-                    .foregroundColor(.secondary)
-
-                HStack {
-                    Text("API Token:")
-                        .font(.system(size: 12))
-                    Spacer()
-                    TextField("Bearer Token (UUID)", text: $inputToken)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 11, design: .monospaced))
-                        .frame(width: 200)
-                }
-
-                HStack {
-                    Text("Job ID:")
-                        .font(.system(size: 12))
-                    Spacer()
-                    TextField("ชื่อ Pipeline ในแอป", text: $store.islandPulseJobId)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(size: 11, design: .monospaced))
-                        .frame(width: 200)
-                }
-                
-                HStack(spacing: 10) {
-                    Button("เชื่อมต่อ") {
-                        store.islandPulseToken = inputToken
-                    }
-                    .disabled(inputToken.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-                    
-                    if !store.islandPulseToken.isEmpty {
-                        Button("ส่งข้อมูลใหม่") {
-                            store.triggerIslandPulseNotification()
-                        }
-                        
-                        Button("ปิดการแสดงผล") {
-                            store.disableIslandPulse()
-                            inputToken = ""
-                        }
-                        .tint(.red)
-                    }
-                }
-                
-                Text("คัดลอก Bearer Token และ Job ID ได้จากแอป Island Pulse บน iPhone")
-                    .font(.system(size: 10))
-                    .foregroundColor(.secondary)
-            }
-
-            Divider()
-
             HStack {
                 if store.hasSessionKey {
                     Button("ล้างค่า / ออกจากระบบ", role: .destructive) {
@@ -206,9 +154,6 @@ struct SettingsView: View {
         }
         .padding(20)
         .frame(width: 380)
-        .onAppear {
-            inputToken = store.islandPulseToken
-        }
     }
 
     private func startLogin(provider: LoginProvider) {

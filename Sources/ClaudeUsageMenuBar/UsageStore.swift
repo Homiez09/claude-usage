@@ -1,5 +1,4 @@
 import Foundation
-import Combine
 
 @MainActor
 final class UsageStore: ObservableObject {
@@ -20,22 +19,12 @@ final class UsageStore: ObservableObject {
     @Published var showWeeklyBar: Bool {
         didSet { UserDefaults.standard.set(showWeeklyBar, forKey: "PrefShowWeeklyBar") }
     }
-    @Published var islandPulseToken: String {
-        didSet {
-            UserDefaults.standard.set(islandPulseToken, forKey: "PrefIslandPulseToken")
-            triggerIslandPulseNotification()
-        }
-    }
-    @Published var islandPulseJobId: String {
-        didSet { UserDefaults.standard.set(islandPulseJobId, forKey: "PrefIslandPulseJobId") }
-    }
 
     private let service: ClaudeUsageService
     private let keychain: KeychainHelper
     private var timer: Timer?
     private let refreshInterval: TimeInterval
     private var webServer: LocalWebServer?
-    private var cancellables = Set<AnyCancellable>()
 
     init(
         service: ClaudeUsageService = ClaudeUsageService(),
@@ -49,30 +38,16 @@ final class UsageStore: ObservableObject {
         self.service = service
         self.keychain = keychain
         self.refreshInterval = refreshInterval
-        
+
         let savedBarWidth = UserDefaults.standard.double(forKey: "PrefBarWidth")
         self.barWidth = savedBarWidth == 0 ? 26.0 : savedBarWidth
         self.showSessionBar = UserDefaults.standard.object(forKey: "PrefShowSessionBar") == nil ? true : UserDefaults.standard.bool(forKey: "PrefShowSessionBar")
         self.showWeeklyBar = UserDefaults.standard.object(forKey: "PrefShowWeeklyBar") == nil ? true : UserDefaults.standard.bool(forKey: "PrefShowWeeklyBar")
-        self.islandPulseToken = UserDefaults.standard.string(forKey: "PrefIslandPulseToken") ?? ""
-        self.islandPulseJobId = UserDefaults.standard.string(forKey: "PrefIslandPulseJobId") ?? "claude-usage"
 
         let activityMonitor = activityMonitor ?? ClaudeCodeActivityMonitor()
         self.activityMonitor = activityMonitor
         let historyStore = historyStore ?? ClaudeCodeHistoryStore()
         self.historyStore = historyStore
-        
-        // Listen to active session changes to update Island Pulse Live Activity instantly
-        activityMonitor.objectWillChange
-            .receive(on: DispatchQueue.main)
-            .sink { [weak self] _ in
-                guard let self else { return }
-                DispatchQueue.main.async {
-                    self.triggerIslandPulseNotification()
-                }
-            }
-            .store(in: &cancellables)
-
         if autoStart {
             start()
             activityMonitor.start()
@@ -161,7 +136,6 @@ final class UsageStore: ObservableObject {
             usage = result
             lastUpdated = Date()
             errorMessage = nil
-            triggerIslandPulseNotification()
         } catch UsageServiceError.unauthorized {
             // Cached org id might be stale for a different account; clear it so the next
             // attempt re-resolves it once the user provides a valid session key.
@@ -179,101 +153,5 @@ final class UsageStore: ObservableObject {
         let orgId = try await service.fetchOrganizationId(sessionKey: sessionKey)
         keychain.saveOrganizationId(orgId)
         return orgId
-    }
-
-    private func resetsInHoursAndMinutes() -> String {
-        guard let resetsAt = sessionResetsAt else { return "" }
-        let diffMs = resetsAt.timeIntervalSince(Date())
-        if diffMs <= 0 { return "" }
-        let mins = Int(diffMs / 60)
-        let hrs = mins / 60
-        let rem = mins % 60
-        if hrs > 0 {
-            return "\(hrs)h \(rem)m"
-        } else {
-            return "\(rem)m"
-        }
-    }
-
-    func triggerIslandPulseNotification() {
-        let token = islandPulseToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !token.isEmpty else { return }
-
-        let sessionPct = sessionPercent ?? 0
-        let weeklyPct = weeklyPercent ?? 0
-        let progress = Double(sessionPct) / 100.0
-
-        let resetTime = resetsInHoursAndMinutes()
-        let resetSuffix = resetTime.isEmpty ? "" : " · resets in \(resetTime)"
-
-        let active = activityMonitor.activeSessions
-        let message: String
-        let status: String
-        let metric: String
-
-        if !active.isEmpty {
-            let session = active[0]
-            var detail = session.displayName
-            if let model = session.model {
-                detail += " (\(model))"
-            }
-            message = "Active: \(detail)\(resetSuffix)"
-            status = "running"
-            metric = "\(sessionPct)%"
-        } else {
-            message = "Session: \(sessionPct)% · Weekly: \(weeklyPct)%\(resetSuffix)"
-            status = "success"
-            metric = "\(sessionPct)%"
-        }
-
-        let jobId = islandPulseJobId.isEmpty ? "claude-usage" : islandPulseJobId
-        let payload: [String: Any] = [
-            "job_id": jobId,
-            "title": "Claude Usage",
-            "message": message,
-            "metric": metric,
-            "progress": progress,
-            "status": status
-        ]
-
-        guard let url = URL(string: "https://api.islandpulse.dev/notify") else { return }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
-
-        URLSession.shared.dataTask(with: request) { _, _, _ in }.resume()
-    }
-
-    func disableIslandPulse() {
-        let token = islandPulseToken.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !token.isEmpty else { return }
-
-        let jobId = islandPulseJobId.isEmpty ? "claude-usage" : islandPulseJobId
-        let payload: [String: Any] = [
-            "job_id": jobId,
-            "title": "Claude Usage",
-            "message": "Live Activity Ended",
-            "metric": "--",
-            "progress": 0.0,
-            "status": "success"
-        ]
-
-        guard let url = URL(string: "https://api.islandpulse.dev/notify") else {
-            self.islandPulseToken = ""
-            return
-        }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.setValue("Bearer \(token)", forHTTPHeaderField: "Authorization")
-        request.setValue("application/json", forHTTPHeaderField: "Content-Type")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: payload)
-
-        URLSession.shared.dataTask(with: request) { [weak self] _, _, _ in
-            Task { @MainActor in
-                self?.islandPulseToken = ""
-            }
-        }.resume()
     }
 }

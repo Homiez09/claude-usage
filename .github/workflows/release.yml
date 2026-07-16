@@ -1,0 +1,32 @@
+name: Release
+
+on:
+  push:
+    tags: [ "v*" ]
+
+permissions:
+  contents: write
+
+jobs:
+  build-and-release:
+    name: Build & Publish Release
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout Code
+        uses: actions/checkout@v4
+
+      - name: Show Swift Version
+        run: swift --version
+
+      - name: Build App Bundle
+        run: ./build_app.sh
+
+      - name: Zip App Bundle
+        run: ditto -c -k --sequesterRsrc --keepParent ClaudeUsageMenuBar.app ClaudeUsageMenuBar.zip
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: ClaudeUsageMenuBar.zip
+          generate_release_notes: true

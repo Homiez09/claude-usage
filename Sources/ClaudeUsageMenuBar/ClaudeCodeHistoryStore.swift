@@ -138,4 +138,25 @@ final class ClaudeCodeHistoryStore: ObservableObject {
         return breakdown.map { ProjectBreakdownItem(name: $0.key, tokens: $0.value.tokens, costUSD: $0.value.cost) }
             .sorted { $0.costUSD > $1.costUSD }
     }
+
+    struct ModelBreakdownItem: Codable, Identifiable {
+        var id: String { name }
+        /// ชื่ออ่านง่ายจาก `ModelDisplayName` เช่น "Sonnet 4.5"
+        let name: String
+        let tokens: Int
+        let costUSD: Double
+    }
+
+    /// รวมยอดตามโมเดล — จัดกลุ่มด้วยชื่ออ่านง่าย เพื่อให้ id แบบ snapshot
+    /// ("claude-sonnet-5-20260101") กับ alias ("claude-sonnet-5") นับรวมกัน
+    func modelBreakdown() -> [ModelBreakdownItem] {
+        var breakdown: [String: (tokens: Int, cost: Double)] = [:]
+        for r in records {
+            let name = ModelDisplayName.display(for: r.model)
+            let entry = breakdown[name, default: (0, 0.0)]
+            breakdown[name] = (entry.tokens + r.totalTokens, entry.cost + r.estimatedCostUSD)
+        }
+        return breakdown.map { ModelBreakdownItem(name: $0.key, tokens: $0.value.tokens, costUSD: $0.value.cost) }
+            .sorted { $0.costUSD > $1.costUSD }
+    }
 }

@@ -79,6 +79,27 @@ final class UsageSnapshotTests: XCTestCase {
         XCTAssertTrue(snapshot.activeAgentSessions.isEmpty)
     }
 
+    func testBuildDefaultsBurnRateFieldsToNil() {
+        let snapshot = UsageSnapshotBuilder.build(hasSessionKey: true, usage: nil, errorMessage: nil, lastUpdated: nil)
+        XCTAssertNil(snapshot.sessionRatePerHour)
+        XCTAssertNil(snapshot.sessionProjectedFullAt)
+    }
+
+    func testBuildIncludesBurnRateFieldsWhenProvided() {
+        let now = Date(timeIntervalSince1970: 1_800_000_000)
+        let projected = now.addingTimeInterval(3600)
+        let snapshot = UsageSnapshotBuilder.build(
+            hasSessionKey: true,
+            usage: nil,
+            errorMessage: nil,
+            lastUpdated: nil,
+            sessionRatePerHour: 12.5,
+            sessionProjectedFullAt: projected
+        )
+        XCTAssertEqual(snapshot.sessionRatePerHour, 12.5)
+        XCTAssertNotNil(snapshot.sessionProjectedFullAt)
+    }
+
     func testRouteReturnsJSONForApiUsagePath() {
         let result = LocalWebServer.route(path: "/api/usage", snapshotJSON: "{\"hasSessionKey\":true}")
         XCTAssertEqual(result.contentType, "application/json; charset=utf-8")
@@ -102,5 +123,15 @@ final class UsageSnapshotTests: XCTestCase {
         )
         XCTAssertEqual(result.contentType, "application/json; charset=utf-8")
         XCTAssertEqual(result.body, "[{\"name\":\"brain-writer\"}]")
+    }
+
+    func testRouteReturnsJSONForApiModelsPath() {
+        let result = LocalWebServer.route(
+            path: "/api/models",
+            snapshotJSON: "unused",
+            modelsJSON: { "[{\"name\":\"Sonnet 5\"}]" }
+        )
+        XCTAssertEqual(result.contentType, "application/json; charset=utf-8")
+        XCTAssertEqual(result.body, "[{\"name\":\"Sonnet 5\"}]")
     }
 }

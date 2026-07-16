@@ -9,28 +9,6 @@ private enum MenuTab: String, CaseIterable, Identifiable {
     var id: String { rawValue }
 }
 
-/// Accent palette shared by both the Mac dropdown and (conceptually) the web
-/// page — warm "Claude orange" as the brand accent, with the usual
-/// blue/orange/red traffic-light scale for utilization.
-private enum Palette {
-    static let brand = Color(red: 0.82, green: 0.42, blue: 0.20)
-    static let brandGradient = LinearGradient(
-        colors: [Color(red: 0.90, green: 0.50, blue: 0.24), Color(red: 0.75, green: 0.32, blue: 0.14)],
-        startPoint: .topLeading, endPoint: .bottomTrailing
-    )
-
-    static func fill(for percent: Int) -> LinearGradient {
-        switch percent {
-        case ..<70:
-            return LinearGradient(colors: [.blue, .cyan], startPoint: .leading, endPoint: .trailing)
-        case 70..<90:
-            return LinearGradient(colors: [.orange, .yellow], startPoint: .leading, endPoint: .trailing)
-        default:
-            return LinearGradient(colors: [.red, .pink], startPoint: .leading, endPoint: .trailing)
-        }
-    }
-}
-
 /// Consistent card chrome (thin material + rounded corners + hairline border)
 /// used for every grouped block in the dropdown.
 private struct CardBackground: ViewModifier {
@@ -54,6 +32,8 @@ struct MenuContentView: View {
     @ObservedObject var activityMonitor: ClaudeCodeActivityMonitor
     @State private var selectedTab: MenuTab = .usage
     @State private var installedAgents: [InstalledAgent] = []
+    @State private var showQRCode = false
+    @State private var qrImage: NSImage?
 
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
@@ -115,32 +95,100 @@ struct MenuContentView: View {
             errorView(errorMessage)
         }
 
+        quickStatsSection
         localAddressSection
+    }
+
+    /// การ์ดสรุปย่อ "วันนี้ / เดือนนี้" จาก historyStore (ประมาณการเทียบเท่า
+    /// ราคา API เช่นเดียวกับแท็บ History) — historyStore ถูก refresh อัตโนมัติ
+    /// อยู่แล้วโดย `UsageStore` จึงไม่ต้องสแกนเพิ่มที่นี่
+    @ViewBuilder
+    private var quickStatsSection: some View {
+        let calendar = Calendar.current
+        let today = store.historyStore.buckets(for: .day)
+            .first { calendar.isDateInToday($0.periodStart) }
+        let thisMonth = store.historyStore.buckets(for: .month)
+            .first { calendar.isDate($0.periodStart, equalTo: Date(), toGranularity: .month) }
+
+        if today != nil || thisMonth != nil {
+            HStack(spacing: 8) {
+                QuickStatCard(
+                    icon: "sun.max.fill",
+                    title: "วันนี้",
+                    costUSD: today?.totalCostUSD ?? 0,
+                    tokens: today?.totalTokens ?? 0
+                )
+                QuickStatCard(
+                    icon: "calendar",
+                    title: "เดือนนี้",
+                    costUSD: thisMonth?.totalCostUSD ?? 0,
+                    tokens: thisMonth?.totalTokens ?? 0
+                )
+            }
+        }
     }
 
     @ViewBuilder
     private var localAddressSection: some View {
         if let address = store.localWebServerAddress {
-            HStack {
-                VStack(alignment: .leading, spacing: 2) {
-                    Text("เปิดบน iPhone (WiFi เดียวกัน)")
-                        .font(.caption2)
-                        .foregroundColor(.secondary)
-                    Text(address)
-                        .font(.system(.caption, design: .monospaced))
-                        .textSelection(.enabled)
+            VStack(spacing: 10) {
+                HStack {
+                    VStack(alignment: .leading, spacing: 2) {
+                        Text("เปิดบน iPhone (WiFi เดียวกัน)")
+                            .font(.caption2)
+                            .foregroundColor(.secondary)
+                        Text(address)
+                            .font(.system(.caption, design: .monospaced))
+                            .textSelection(.enabled)
+                    }
+                    Spacer()
+                    Button {
+                        if showQRCode {
+                            showQRCode = false
+                        } else {
+                            qrImage = QRCodeGenerator.image(for: address)
+                            showQRCode = true
+                        }
+                    } label: {
+                        Image(systemName: "qrcode")
+                            .foregroundColor(showQRCode ? .white : Palette.brand)
+                            .padding(4)
+                            .background(
+                                RoundedRectangle(cornerRadius: 6, style: .continuous)
+                                    .fill(showQRCode ? Palette.brand : Palette.brand.opacity(0.12))
+                            )
+                    }
+                    .buttonStyle(.plain)
+                    .help("แสดง QR code ให้ iPhone สแกน")
+                    Button {
+                        let pasteboard = NSPasteboard.general
+                        pasteboard.clearContents()
+                        pasteboard.setString(address, forType: .string)
+                    } label: {
+                        Image(systemName: "doc.on.doc")
+                            .foregroundColor(Palette.brand)
+                    }
+                    .buttonStyle(.plain)
+                    .help("คัดลอกที่อยู่")
                 }
-                Spacer()
-                Button {
-                    let pasteboard = NSPasteboard.general
-                    pasteboard.clearContents()
-                    pasteboard.setString(address, forType: .string)
-                } label: {
-                    Image(systemName: "doc.on.doc")
-                        .foregroundColor(Palette.brand)
+
+                if showQRCode, let qrImage {
+                    VStack(spacing: 5) {
+                        Image(nsImage: qrImage)
+                            .resizable()
+                            .interpolation(.none)
+                            .frame(width: 128, height: 128)
+                            .padding(8)
+                            .background(
+                                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                                    .fill(Color.white)
+                            )
+                        Text("สแกนด้วยกล้อง iPhone")
+                            .font(.system(size: 9))
+                            .foregroundColor(.secondary)
+                    }
+                    .frame(maxWidth: .infinity)
                 }
-                .buttonStyle(.plain)
-                .help("คัดลอกที่อยู่")
             }
             .cardStyle()
         }
@@ -258,12 +306,13 @@ struct MenuContentView: View {
         HStack(spacing: 10) {
             ZStack {
                 RoundedRectangle(cornerRadius: 9, style: .continuous)
-                    .fill(Color(NSColor.controlBackgroundColor))
+                    .fill(Palette.brand.opacity(0.12))
                     .frame(width: 30, height: 30)
                     .overlay(
                         RoundedRectangle(cornerRadius: 9, style: .continuous)
-                            .stroke(Color.primary.opacity(0.08), lineWidth: 1)
+                            .stroke(Palette.brand.opacity(0.25), lineWidth: 1)
                     )
+                    .shadow(color: Palette.brand.opacity(0.18), radius: 5, y: 1)
                 if let logo = ClaudeLogo.image {
                     Image(nsImage: logo)
                         .resizable()
@@ -335,6 +384,7 @@ struct MenuContentView: View {
                     resetsAt: FlexibleISO8601.date(from: session.resetsAt),
                     percent: session.utilization ?? 0
                 )
+                burnRateLine
             }
 
             let weeklyLimits = usage.limits.filter { $0.group == "weekly" }
@@ -365,6 +415,27 @@ struct MenuContentView: View {
             }
         }
         .cardStyle()
+    }
+
+    /// บรรทัดเพซใต้ Current session — โชว์เมื่อข้อมูลพอประเมิน (poll ห่างกัน
+    /// อย่างน้อย 3 นาทีและ % ไต่ขึ้น ดู `BurnRateEstimator`)
+    @ViewBuilder
+    private var burnRateLine: some View {
+        if let rate = store.sessionBurnRatePerHour, let projected = store.sessionProjectedFullAt {
+            let willFillBeforeReset = store.sessionResetsAt.map { projected < $0 } ?? false
+            let rateText = String(format: "%.1f", rate)
+            HStack(spacing: 5) {
+                Image(systemName: willFillBeforeReset ? "flame.fill" : "speedometer")
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(willFillBeforeReset ? .orange : .secondary)
+                Text(willFillBeforeReset
+                    ? "เพซ ~\(rateText)%/ชม. — จะเต็มก่อนรีเซ็ต ~\(projected.formatted(date: .omitted, time: .shortened))"
+                    : "เพซ ~\(rateText)%/ชม. ไม่น่าเต็มก่อนรีเซ็ต")
+                    .font(.caption2.weight(willFillBeforeReset ? .semibold : .regular))
+                    .foregroundColor(willFillBeforeReset ? .orange : .secondary)
+            }
+            .padding(.top, -4)
+        }
     }
 
     private var memoryUsageString: String {
@@ -427,6 +498,54 @@ struct MenuContentView: View {
             : [session.model]
         let joined = parts.compactMap { $0 }.joined(separator: " · ")
         return joined.isEmpty ? nil : joined
+    }
+}
+
+/// การ์ดสถิติย่อหนึ่งใบ (ไอคอน + หัวข้อ + ค่าใช้จ่าย + โทเคน) ใช้ในแถว
+/// "วันนี้ / เดือนนี้" ของแท็บ Usage
+private struct QuickStatCard: View {
+    let icon: String
+    let title: String
+    let costUSD: Double
+    let tokens: Int
+
+    var body: some View {
+        HStack(spacing: 8) {
+            ZStack {
+                RoundedRectangle(cornerRadius: 7, style: .continuous)
+                    .fill(Palette.brand.opacity(0.14))
+                    .frame(width: 26, height: 26)
+                Image(systemName: icon)
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundColor(Palette.brand)
+            }
+            VStack(alignment: .leading, spacing: 0) {
+                Text(title)
+                    .font(.system(size: 9, weight: .semibold))
+                    .foregroundColor(.secondary)
+                Text(costUSD, format: .currency(code: "USD"))
+                    .font(.system(.caption, design: .rounded).weight(.bold))
+                Text("\(Self.compactTokens(tokens)) tokens")
+                    .font(.system(size: 9))
+                    .foregroundColor(.secondary)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 10)
+        .padding(.vertical, 8)
+        .background(.ultraThinMaterial, in: RoundedRectangle(cornerRadius: 10, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: 10, style: .continuous)
+                .strokeBorder(Color.primary.opacity(0.06))
+        )
+    }
+
+    private static func compactTokens(_ tokens: Int) -> String {
+        switch tokens {
+        case ..<1_000: return "\(tokens)"
+        case ..<1_000_000: return String(format: "%.1fK", Double(tokens) / 1_000)
+        default: return String(format: "%.1fM", Double(tokens) / 1_000_000)
+        }
     }
 }
 
@@ -586,8 +705,11 @@ private struct UsageRow: View {
                 }
                 Spacer()
                 Text("\(percent)%")
-                    .font(.system(.callout, design: .rounded).weight(.bold))
-                    .foregroundColor(color(for: percent))
+                    .font(.system(.caption, design: .rounded).weight(.bold))
+                    .foregroundColor(Palette.tint(for: percent))
+                    .padding(.horizontal, 8)
+                    .padding(.vertical, 3)
+                    .background(Capsule().fill(Palette.tint(for: percent).opacity(0.12)))
             }
             GeometryReader { geo in
                 ZStack(alignment: .leading) {
@@ -596,17 +718,10 @@ private struct UsageRow: View {
                     Capsule()
                         .fill(Palette.fill(for: percent))
                         .frame(width: geo.size.width * CGFloat(min(max(percent, 0), 100)) / 100)
+                        .shadow(color: Palette.tint(for: percent).opacity(0.35), radius: 3, y: 1)
                 }
             }
             .frame(height: 7)
-        }
-    }
-
-    private func color(for percent: Int) -> Color {
-        switch percent {
-        case ..<70: return .blue
-        case 70..<90: return .orange
-        default: return .red
         }
     }
 }

@@ -4,6 +4,8 @@ import SwiftUI
 struct SettingsView: View {
     @ObservedObject var store: UsageStore
     @State private var isRefreshing = false
+    @State private var launchAtLoginEnabled = LaunchAtLogin.isEnabled
+    @State private var launchAtLoginError: String?
 
     private let providers: [LoginProvider] = [.claude]
 
@@ -132,6 +134,43 @@ struct SettingsView: View {
                 Toggle("แสดงแถบโควตา รายสัปดาห์ (Weekly Limit)", isOn: $store.showWeeklyBar)
                     .toggleStyle(.checkbox)
                     .font(.system(size: 12))
+            }
+
+            Divider()
+
+            VStack(alignment: .leading, spacing: 10) {
+                Text("การแจ้งเตือนและการเริ่มต้น")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundColor(.secondary)
+
+                Toggle("แจ้งเตือนเมื่อโควตาใกล้เต็ม (80% / 95%)", isOn: $store.notificationsEnabled)
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 12))
+
+                if LaunchAtLogin.isAvailable {
+                    Toggle("เปิดแอปอัตโนมัติตอนเข้าสู่ระบบ", isOn: $launchAtLoginEnabled)
+                        .toggleStyle(.checkbox)
+                        .font(.system(size: 12))
+                        .onChange(of: launchAtLoginEnabled) { newValue in
+                            do {
+                                try LaunchAtLogin.set(newValue)
+                                launchAtLoginError = nil
+                            } catch {
+                                launchAtLoginEnabled = LaunchAtLogin.isEnabled
+                                launchAtLoginError = error.localizedDescription
+                            }
+                        }
+
+                    if let launchAtLoginError {
+                        Text(launchAtLoginError)
+                            .font(.system(size: 10))
+                            .foregroundColor(.red)
+                    }
+                } else {
+                    Text("เปิดอัตโนมัติตอน login ใช้ได้เฉพาะเมื่อรันจาก ClaudeUsageMenuBar.app (ผ่าน ./build_app.sh)")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
             }
 
             Divider()

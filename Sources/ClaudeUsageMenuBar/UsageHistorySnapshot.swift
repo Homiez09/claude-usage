@@ -6,6 +6,9 @@ import Foundation
 struct UsageHistorySnapshot: Codable, Equatable {
     struct Period: Codable, Equatable {
         let label: String
+        /// ISO8601 ของจุดเริ่มช่วง — ให้หน้าเว็บเทียบได้ว่า period ไหนคือ
+        /// วันนี้/เดือนนี้ โดยไม่ต้องแกะ `label` ที่ format ตาม locale ของ Mac
+        let periodStart: String
         let costUSD: Double
         let tokens: Int
     }
@@ -15,11 +18,18 @@ struct UsageHistorySnapshot: Codable, Equatable {
 }
 
 enum UsageHistorySnapshotBuilder {
+    private static let iso8601 = ISO8601DateFormatter()
+
     static func build(buckets: [UsageHistoryBucket], granularity: UsageHistoryGranularity) -> UsageHistorySnapshot {
         UsageHistorySnapshot(
             granularity: granularity.queryKey,
             periods: buckets.map {
-                UsageHistorySnapshot.Period(label: $0.label, costUSD: $0.totalCostUSD, tokens: $0.totalTokens)
+                UsageHistorySnapshot.Period(
+                    label: $0.label,
+                    periodStart: iso8601.string(from: $0.periodStart),
+                    costUSD: $0.totalCostUSD,
+                    tokens: $0.totalTokens
+                )
             }
         )
     }

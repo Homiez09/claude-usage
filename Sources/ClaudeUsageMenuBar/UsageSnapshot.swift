@@ -17,6 +17,28 @@ struct UsageSnapshot: Codable, Equatable {
     let rows: [Row]
     /// Display names of Claude Code sessions currently active on this Mac.
     let activeAgentSessions: [String]
+    /// เพซการใช้งาน session ปัจจุบัน (%/ชม.) — nil ถ้าข้อมูลยังไม่พอประเมิน
+    let sessionRatePerHour: Double?
+    /// ISO8601 ของเวลาที่คาดว่า session จะแตะ 100% ถ้าคงเพซนี้ไว้
+    let sessionProjectedFullAt: String?
+
+    init(
+        hasSessionKey: Bool,
+        errorMessage: String?,
+        lastUpdated: String?,
+        rows: [Row],
+        activeAgentSessions: [String],
+        sessionRatePerHour: Double? = nil,
+        sessionProjectedFullAt: String? = nil
+    ) {
+        self.hasSessionKey = hasSessionKey
+        self.errorMessage = errorMessage
+        self.lastUpdated = lastUpdated
+        self.rows = rows
+        self.activeAgentSessions = activeAgentSessions
+        self.sessionRatePerHour = sessionRatePerHour
+        self.sessionProjectedFullAt = sessionProjectedFullAt
+    }
 }
 
 enum UsageSnapshotBuilder {
@@ -27,7 +49,9 @@ enum UsageSnapshotBuilder {
         usage: UsageResponse?,
         errorMessage: String?,
         lastUpdated: Date?,
-        activeAgentSessions: [String] = []
+        activeAgentSessions: [String] = [],
+        sessionRatePerHour: Double? = nil,
+        sessionProjectedFullAt: Date? = nil
     ) -> UsageSnapshot {
         var rows: [UsageSnapshot.Row] = []
 
@@ -58,7 +82,9 @@ enum UsageSnapshotBuilder {
             errorMessage: errorMessage,
             lastUpdated: lastUpdated.map { iso8601.string(from: $0) },
             rows: rows,
-            activeAgentSessions: activeAgentSessions
+            activeAgentSessions: activeAgentSessions,
+            sessionRatePerHour: sessionRatePerHour,
+            sessionProjectedFullAt: sessionProjectedFullAt.map { iso8601.string(from: $0) }
         )
     }
 

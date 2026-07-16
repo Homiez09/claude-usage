@@ -19,9 +19,23 @@ final class UsageStore: ObservableObject {
     @Published var showWeeklyBar: Bool {
         didSet { UserDefaults.standard.set(showWeeklyBar, forKey: "PrefShowWeeklyBar") }
     }
+    @Published var notificationsEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(notificationsEnabled, forKey: "PrefNotifyEnabled")
+            if notificationsEnabled {
+                notifier.requestAuthorizationIfNeeded()
+            }
+        }
+    }
+
+    /// จุดข้อมูล (เวลา, %) ของ session ปัจจุบัน เก็บจากการ poll แต่ละรอบ
+    /// เพื่อประเมิน burn rate — ล้างทิ้งเมื่อ session รีเซ็ต (% ตกลง)
+    @Published private(set) var burnSamples: [BurnRateSample] = []
 
     private let service: ClaudeUsageService
     private let keychain: KeychainHelper
+    private let notifier = UsageNotifier()
+    private var firedAlertThresholds: [String: Int] = [:]
     private var timer: Timer?
     private let refreshInterval: TimeInterval
     private var webServer: LocalWebServer?
@@ -43,6 +57,7 @@ final class UsageStore: ObservableObject {
         self.barWidth = savedBarWidth == 0 ? 26.0 : savedBarWidth
         self.showSessionBar = UserDefaults.standard.object(forKey: "PrefShowSessionBar") == nil ? true : UserDefaults.standard.bool(forKey: "PrefShowSessionBar")
         self.showWeeklyBar = UserDefaults.standard.object(forKey: "PrefShowWeeklyBar") == nil ? true : UserDefaults.standard.bool(forKey: "PrefShowWeeklyBar")
+        self.notificationsEnabled = UserDefaults.standard.object(forKey: "PrefNotifyEnabled") == nil ? true : UserDefaults.standard.bool(forKey: "PrefNotifyEnabled")
 
         let activityMonitor = activityMonitor ?? ClaudeCodeActivityMonitor()
         self.activityMonitor = activityMonitor
@@ -103,6 +118,16 @@ final class UsageStore: ObservableObject {
         FlexibleISO8601.date(from: usage?.fiveHour?.resetsAt)
     }
 
+    /// เพซการใช้งาน session ปัจจุบัน (%/ชม.) จากจุดข้อมูลที่ poll มา
+    var sessionBurnRatePerHour: Double? {
+        BurnRateEstimator.ratePerHour(samples: burnSamples)
+    }
+
+    /// เวลาที่คาดว่า session จะแตะ 100% ถ้าคงเพซนี้ไว้
+    var sessionProjectedFullAt: Date? {
+        BurnRateEstimator.projectedFullDate(samples: burnSamples)
+    }
+
     func start() {
         timer?.invalidate()
         Task { await refresh() }
@@ -136,6 +161,8 @@ final class UsageStore: ObservableObject {
             usage = result
             lastUpdated = Date()
             errorMessage = nil
+            recordBurnSample()
+            evaluateAlerts()
         } catch UsageServiceError.unauthorized {
             // Cached org id might be stale for a different account; clear it so the next
             // attempt re-resolves it once the user provides a valid session key.
@@ -143,6 +170,38 @@ final class UsageStore: ObservableObject {
             errorMessage = UsageServiceError.unauthorized.localizedDescription
         } catch {
             errorMessage = error.localizedDescription
+        }
+    }
+
+    /// เก็บจุดข้อมูล burn rate ของ session ปัจจุบัน — ล้างทิ้งเมื่อ % ตกลง
+    /// (แปลว่าโควตารีเซ็ตแล้ว) และเก็บเฉพาะช่วง 30 นาทีล่าสุดพอให้เพซนิ่ง
+    private func recordBurnSample() {
+        guard let percent = usage?.fiveHour?.utilization else { return }
+        let now = Date()
+        if let last = burnSamples.last, percent < last.percent {
+            burnSamples.removeAll()
+        }
+        burnSamples.append(BurnRateSample(time: now, percent: percent))
+        let cutoff = now.addingTimeInterval(-1800)
+        burnSamples.removeAll { $0.time < cutoff }
+    }
+
+    /// เทียบเปอร์เซ็นต์ล่าสุดกับ threshold (80/95) แล้วยิง notification
+    /// เฉพาะตอนข้ามขาขึ้น — สถานะกันยิงซ้ำอยู่ใน `firedAlertThresholds`
+    private func evaluateAlerts() {
+        var entries: [(key: String, title: String, percent: Int)] = []
+        if let percent = usage?.fiveHour?.utilization {
+            entries.append(("session", "Current session", percent))
+        }
+        for entry in usage?.limits ?? [] where entry.group == "weekly" {
+            let title = entry.scope?.model?.displayName ?? "All models"
+            entries.append(("\(entry.kind)-\(title)", title, entry.percent))
+        }
+
+        let (alerts, newState) = UsageAlertPlanner.plan(current: entries, firedThresholds: firedAlertThresholds)
+        firedAlertThresholds = newState
+        if notificationsEnabled {
+            notifier.send(alerts)
         }
     }
 

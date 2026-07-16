@@ -27,6 +27,14 @@ final class UsageStore: ObservableObject {
             }
         }
     }
+    @Published var sessionEndNotificationsEnabled: Bool {
+        didSet {
+            UserDefaults.standard.set(sessionEndNotificationsEnabled, forKey: "PrefNotifySessionEnd")
+            if sessionEndNotificationsEnabled {
+                notifier.requestAuthorizationIfNeeded()
+            }
+        }
+    }
 
     /// จุดข้อมูล (เวลา, %) ของ session ปัจจุบัน เก็บจากการ poll แต่ละรอบ
     /// เพื่อประเมิน burn rate — ล้างทิ้งเมื่อ session รีเซ็ต (% ตกลง)
@@ -36,6 +44,8 @@ final class UsageStore: ObservableObject {
     private let keychain: KeychainHelper
     private let notifier = UsageNotifier()
     private var firedAlertThresholds: [String: Int] = [:]
+    /// % ของ session จากรอบ refresh ก่อนหน้า ใช้ตรวจว่าโควตาเพิ่งรีเซ็ต
+    private var lastSessionPercent: Int?
     private var timer: Timer?
     private let refreshInterval: TimeInterval
     private var webServer: LocalWebServer?
@@ -58,11 +68,16 @@ final class UsageStore: ObservableObject {
         self.showSessionBar = UserDefaults.standard.object(forKey: "PrefShowSessionBar") == nil ? true : UserDefaults.standard.bool(forKey: "PrefShowSessionBar")
         self.showWeeklyBar = UserDefaults.standard.object(forKey: "PrefShowWeeklyBar") == nil ? true : UserDefaults.standard.bool(forKey: "PrefShowWeeklyBar")
         self.notificationsEnabled = UserDefaults.standard.object(forKey: "PrefNotifyEnabled") == nil ? true : UserDefaults.standard.bool(forKey: "PrefNotifyEnabled")
+        self.sessionEndNotificationsEnabled = UserDefaults.standard.object(forKey: "PrefNotifySessionEnd") == nil ? true : UserDefaults.standard.bool(forKey: "PrefNotifySessionEnd")
 
         let activityMonitor = activityMonitor ?? ClaudeCodeActivityMonitor()
         self.activityMonitor = activityMonitor
         let historyStore = historyStore ?? ClaudeCodeHistoryStore()
         self.historyStore = historyStore
+        activityMonitor.onSessionsEnded = { [weak self] ended in
+            guard let self, self.sessionEndNotificationsEnabled else { return }
+            self.notifier.sendSessionEnded(ended)
+        }
         if autoStart {
             start()
             activityMonitor.start()
@@ -188,10 +203,16 @@ final class UsageStore: ObservableObject {
 
     /// เทียบเปอร์เซ็นต์ล่าสุดกับ threshold (80/95) แล้วยิง notification
     /// เฉพาะตอนข้ามขาขึ้น — สถานะกันยิงซ้ำอยู่ใน `firedAlertThresholds`
+    /// รวมทั้งตรวจขาลง (โควตารีเซ็ตหลังจากเคยใกล้เต็ม) เพื่อแจ้งว่ากลับมาใช้ได้
     private func evaluateAlerts() {
         var entries: [(key: String, title: String, percent: Int)] = []
         if let percent = usage?.fiveHour?.utilization {
             entries.append(("session", "Current session", percent))
+            if notificationsEnabled,
+               UsageAlertPlanner.shouldNotifyReset(previousPercent: lastSessionPercent, currentPercent: percent) {
+                notifier.sendQuotaReset()
+            }
+            lastSessionPercent = percent
         }
         for entry in usage?.limits ?? [] where entry.group == "weekly" {
             let title = entry.scope?.model?.displayName ?? "All models"

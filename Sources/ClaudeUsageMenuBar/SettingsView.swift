@@ -143,7 +143,11 @@ struct SettingsView: View {
                     .font(.system(size: 11, weight: .bold))
                     .foregroundColor(.secondary)
 
-                Toggle("แจ้งเตือนเมื่อโควตาใกล้เต็ม (80% / 95%)", isOn: $store.notificationsEnabled)
+                Toggle("แจ้งเตือนเมื่อโควตาใกล้เต็ม (80% / 95%) และเมื่อรีเซ็ต", isOn: $store.notificationsEnabled)
+                    .toggleStyle(.checkbox)
+                    .font(.system(size: 12))
+
+                Toggle("แจ้งเตือนเมื่อ Claude Code ทำงานเสร็จ", isOn: $store.sessionEndNotificationsEnabled)
                     .toggleStyle(.checkbox)
                     .font(.system(size: 12))
 

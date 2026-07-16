@@ -39,6 +39,14 @@ enum UsageAlertPlanner {
         }
         return (alerts, newState)
     }
+
+    /// ควรแจ้ง "โควตารีเซ็ตแล้ว" ไหม — เฉพาะตอน % ตกฮวบกลับมาต่ำหลังจากเคย
+    /// ขึ้นถึงระดับที่แจ้งเตือนไว้ (ใกล้เต็ม) เท่านั้น ไม่งั้นการรีเซ็ตปกติ
+    /// ทุกๆ 5 ชั่วโมงที่ผู้ใช้ไม่ได้รออะไรอยู่จะกลายเป็นสแปม
+    static func shouldNotifyReset(previousPercent: Int?, currentPercent: Int) -> Bool {
+        guard let previousPercent, let lowestThreshold = thresholds.min() else { return false }
+        return previousPercent >= lowestThreshold && currentPercent <= 20
+    }
 }
 
 /// ยิง macOS notification จากผลของ `UsageAlertPlanner`
@@ -75,5 +83,39 @@ final class UsageNotifier {
                 )
             )
         }
+    }
+
+    func sendSessionEnded(_ sessions: [SessionEndPlanner.EndedSession]) {
+        guard Self.canNotify, !sessions.isEmpty else { return }
+        requestAuthorizationIfNeeded()
+        let center = UNUserNotificationCenter.current()
+        for session in sessions {
+            let content = UNMutableNotificationContent()
+            content.title = "Claude Code ทำงานเสร็จแล้ว"
+            let minutes = max(1, Int(session.activeDuration / 60))
+            content.body = "\(session.displayName) หยุดทำงานแล้ว (ทำต่อเนื่อง ~\(minutes) นาที)"
+            content.sound = .default
+            // identifier ต่อ session — ถ้า session เดิมจบซ้ำ (active ใหม่แล้วจบอีก)
+            // จะแทนที่อันเก่าแทนที่จะกองใน Notification Center
+            center.add(
+                UNNotificationRequest(
+                    identifier: "session-end-\(session.id)",
+                    content: content,
+                    trigger: nil
+                )
+            )
+        }
+    }
+
+    func sendQuotaReset() {
+        guard Self.canNotify else { return }
+        requestAuthorizationIfNeeded()
+        let content = UNMutableNotificationContent()
+        content.title = "โควตารีเซ็ตแล้ว"
+        content.body = "Session ใหม่เริ่มแล้ว ใช้งาน Claude ได้เต็มที่"
+        content.sound = .default
+        UNUserNotificationCenter.current().add(
+            UNNotificationRequest(identifier: "quota-reset", content: content, trigger: nil)
+        )
     }
 }

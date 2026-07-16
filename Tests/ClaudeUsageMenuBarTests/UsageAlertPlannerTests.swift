@@ -77,4 +77,24 @@ final class UsageAlertPlannerTests: XCTestCase {
         XCTAssertTrue(alerts.isEmpty)
         XCTAssertNil(state["session"])
     }
+
+    // MARK: - shouldNotifyReset
+
+    func testResetNotifiedWhenDroppingFromNearFullToNearZero() {
+        XCTAssertTrue(UsageAlertPlanner.shouldNotifyReset(previousPercent: 85, currentPercent: 0))
+        XCTAssertTrue(UsageAlertPlanner.shouldNotifyReset(previousPercent: 97, currentPercent: 12))
+    }
+
+    func testResetNotNotifiedOnFirstPoll() {
+        XCTAssertFalse(UsageAlertPlanner.shouldNotifyReset(previousPercent: nil, currentPercent: 0))
+    }
+
+    func testResetNotNotifiedWhenPreviousUsageWasLow() {
+        // รีเซ็ตปกติที่ผู้ใช้ไม่ได้รออะไร (ใช้ไปแค่ 40%) — ไม่ต้องเด้ง
+        XCTAssertFalse(UsageAlertPlanner.shouldNotifyReset(previousPercent: 40, currentPercent: 0))
+    }
+
+    func testResetNotNotifiedWhilePercentStillHigh() {
+        XCTAssertFalse(UsageAlertPlanner.shouldNotifyReset(previousPercent: 85, currentPercent: 84))
+    }
 }

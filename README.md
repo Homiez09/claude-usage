@@ -4,7 +4,8 @@ A Swift menu bar app that mirrors claude.ai's "Plan usage limits" panel (current
 session + weekly progress), plus:
 
 - **Burn Rate & Projection:** Tracks your session quota consumption pace (% per hour) and predicts the exact time your quota will reset/hit 100% based on your usage.
-- **Threshold Notifications:** Sends macOS local notifications when current session utilization or weekly model limits cross critical thresholds (80% and 95%).
+- **Threshold Notifications:** Sends macOS local notifications when current session utilization or weekly model limits cross critical thresholds (80% and 95%), and again when the quota resets after having been near-full.
+- **Session-End Notifications:** Notifies you when a Claude Code session that has been working continuously (≥2 minutes) goes idle — so you can switch away while long agentic tasks run.
 - **Launch at Login:** Configurable option to automatically start the app on macOS startup.
 - **Local Web Server & QR Code:** Minimal local HTTP server with inline QR Code in the dropdown for easily scanning and viewing usage stats on a mobile Safari browser on the same Wi-Fi network.
 - **Claude Code History UI:** Computes usage and cost locally from `~/.claude/projects/**/*.jsonl` (never sent over the network).
@@ -40,6 +41,8 @@ claude_usage/
 │   ├── ClaudeLogo.swift                 # Base64-embedded logo (see note below)
 │   │
 │   ├── BurnRateEstimator.swift          # Session burn rate (%/hr) and reset projection estimator
+│   ├── SessionEndPlanner.swift          # Detects "session just finished" transitions
+│   │                                     # from the activity monitor's poll results
 │   ├── LaunchAtLogin.swift              # Helper for configuring launch at login
 │   ├── ModelDisplayName.swift           # Display names mapping for Anthropic models
 │   ├── Palette.swift                    # Standard colors & theme utilities for views

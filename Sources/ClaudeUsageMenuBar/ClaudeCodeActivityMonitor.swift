@@ -26,6 +26,10 @@ final class ClaudeCodeActivityMonitor: ObservableObject {
     @Published private(set) var isActive = false
     @Published private(set) var animationPhase: Double = 0
 
+    /// เรียกบน MainActor เมื่อ session ที่ทำงานต่อเนื่องนานพอเพิ่งกลายเป็น idle
+    /// (ตามเกณฑ์ของ `SessionEndPlanner`) — `UsageStore` ใช้ต่อยอดเป็น notification
+    var onSessionsEnded: (([SessionEndPlanner.EndedSession]) -> Void)?
+
     private let directory: URL
     private let activeWindow: TimeInterval
     private var pollTimer: Timer?
@@ -35,6 +39,8 @@ final class ClaudeCodeActivityMonitor: ObservableObject {
     
     private var lastPollTime = Date.distantPast
     private var pendingPollTask: Task<Void, Never>?
+    /// สถานะของ `SessionEndPlanner`: session ไหนเริ่ม active ตั้งแต่เมื่อไหร่
+    private var activeSince: [String: Date] = [:]
 
     init(
         directory: URL = ClaudeCodeTranscriptScanner.projectsDirectory,
@@ -169,6 +175,12 @@ final class ClaudeCodeActivityMonitor: ObservableObject {
         titleCache.merge(result.newlyResolvedTitles) { _, new in new }
         sessions = result.sessions
         setActive(result.sessions.contains { $0.isActive })
+
+        let endPlan = SessionEndPlanner.plan(activeSince: activeSince, sessions: result.sessions)
+        activeSince = endPlan.newActiveSince
+        if !endPlan.ended.isEmpty {
+            onSessionsEnded?(endPlan.ended)
+        }
     }
 
     private func setActive(_ active: Bool) {

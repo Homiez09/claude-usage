@@ -3,12 +3,12 @@
 A Swift menu bar app that mirrors claude.ai's "Plan usage limits" panel (current
 session + weekly progress), plus:
 
-- a local web server so an iPhone on the same Wi-Fi can view the same numbers
-  in Safari with no app to install
-- a Claude Code usage/cost history tab, computed locally from
-  `~/.claude/projects/**/*.jsonl` (never sent over the network)
-- live detection of which Claude Code sessions are actively working right
-  now, shown on the menu bar icon (bounce animation) and in the dropdown
+- **Burn Rate & Projection:** Tracks your session quota consumption pace (% per hour) and predicts the exact time your quota will reset/hit 100% based on your usage.
+- **Threshold Notifications:** Sends macOS local notifications when current session utilization or weekly model limits cross critical thresholds (80% and 95%).
+- **Launch at Login:** Configurable option to automatically start the app on macOS startup.
+- **Local Web Server & QR Code:** Minimal local HTTP server with inline QR Code in the dropdown for easily scanning and viewing usage stats on a mobile Safari browser on the same Wi-Fi network.
+- **Claude Code History UI:** Computes usage and cost locally from `~/.claude/projects/**/*.jsonl` (never sent over the network).
+- **Live Activity Detection:** Bounces the menu bar icon and highlights active Claude Code sessions in the dropdown.
 
 ## Project structure
 
@@ -24,24 +24,32 @@ claude_usage/
 │   ├── AppDelegate.swift                # Forces accessory (no Dock icon) activation policy
 │   │
 │   ├── UsageStore.swift                 # Central state: polls claude.ai, owns the
-│   │                                     # local web server + activity monitor
+│   │                                     # local web server + activity monitor, evaluates alerts
 │   ├── UsageService.swift               # HTTP client for claude.ai's usage API
 │   ├── UsageModels.swift                # Codable models for the usage API response
 │   ├── KeychainHelper.swift             # Session key storage (macOS Keychain)
 │   ├── DateParsing.swift                # ISO8601 parsing + "resets in Xh Ym" formatting
 │   │
-│   ├── MenuContentView.swift            # The dropdown UI (Usage / History tabs)
-│   ├── UsageHistoryView.swift           # History tab UI
-│   ├── SettingsView.swift               # Session key entry screen
+│   ├── MenuContentView.swift            # The dropdown UI (Usage / History tabs + QR code)
+│   ├── UsageHistoryView.swift           # History tab UI with granular chart visualization
+│   ├── SettingsView.swift               # Session key entry & notification / launch settings screen
 │   ├── SettingsWindowPresenter.swift    # Hosts SettingsView in a real NSWindow
 │   │                                     # (not a SwiftUI .sheet — see inline comment
 │   │                                     # for why that broke MenuBarExtra)
 │   ├── MenuBarProgressIcon.swift        # Renders the colored menu bar icon as a bitmap
 │   ├── ClaudeLogo.swift                 # Base64-embedded logo (see note below)
 │   │
-│   ├── LocalWebServer.swift             # Minimal HTTP server for the iPhone page
+│   ├── BurnRateEstimator.swift          # Session burn rate (%/hr) and reset projection estimator
+│   ├── LaunchAtLogin.swift              # Helper for configuring launch at login
+│   ├── ModelDisplayName.swift           # Display names mapping for Anthropic models
+│   ├── Palette.swift                    # Standard colors & theme utilities for views
+│   ├── QRCodeGenerator.swift            # Generates a QR Code for scanning to view usage
+│   ├── UsageAlerts.swift                # Triggers OS notification alerts at 80% / 95% usage
+│   │
+│   ├── LocalWebServer.swift             # Minimal HTTP server for the iPhone page & endpoints
 │   ├── LocalNetwork.swift               # Finds the Mac's LAN IP to display/copy
 │   ├── UsageSnapshot.swift              # JSON payload served at /api/usage
+│   ├── UsageHistorySnapshot.swift       # History payload served at /api/history
 │   │
 │   ├── ClaudeCodeTranscriptScanner.swift    # Parses ~/.claude/projects/**/*.jsonl
 │   ├── ClaudeCodeUsageRecord.swift          # One assistant turn's token usage

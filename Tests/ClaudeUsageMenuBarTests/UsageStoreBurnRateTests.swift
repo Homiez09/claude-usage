@@ -30,25 +30,30 @@ private final class SequencedNetworkClient: NetworkClient, @unchecked Sendable {
 }
 
 /// Uses a dedicated Keychain namespace, per this project's testing rules —
-/// never touch `KeychainHelper.shared`.
+/// never touch `SessionStore.shared`.
 @MainActor
 final class UsageStoreBurnRateTests: XCTestCase {
-    private let keychain = KeychainHelper(service: "com.claudeusage.menubar.tests.burnrate")
+    private var directory: URL!
+    private var sessionStore: SessionStore!
 
     override func setUp() {
         super.setUp()
-        keychain.saveSessionKey("test-session")
+        directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("UsageStoreBurnRateTests-\(UUID().uuidString)", isDirectory: true)
+        sessionStore = SessionStore(directory: directory, namespace: "com.claudeusage.menubar.tests.burnrate")
+        sessionStore.saveSessionKey("test-session")
     }
 
     override func tearDown() {
-        keychain.deleteSessionKey()
-        keychain.deleteOrganizationId()
+        sessionStore.deleteSessionKey()
+        sessionStore.deleteOrganizationId()
+        try? FileManager.default.removeItem(at: directory)
         super.tearDown()
     }
 
     func testBurnSamplesAccumulateAcrossRefreshes() async {
         let client = SequencedNetworkClient(utilizations: [10, 20, 30])
-        let store = UsageStore(service: ClaudeUsageService(client: client), keychain: keychain, autoStart: false)
+        let store = UsageStore(service: ClaudeUsageService(client: client), sessionStore: sessionStore, autoStart: false)
 
         await store.refresh()
         await store.refresh()
@@ -60,7 +65,7 @@ final class UsageStoreBurnRateTests: XCTestCase {
 
     func testBurnSamplesResetWhenUtilizationDropsBelowLast() async {
         let client = SequencedNetworkClient(utilizations: [50, 70, 5])
-        let store = UsageStore(service: ClaudeUsageService(client: client), keychain: keychain, autoStart: false)
+        let store = UsageStore(service: ClaudeUsageService(client: client), sessionStore: sessionStore, autoStart: false)
 
         await store.refresh()
         await store.refresh()

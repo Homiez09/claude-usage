@@ -3,8 +3,8 @@ import Network
 
 /// Minimal HTTP server so an iPhone on the same Wi-Fi can view the same usage
 /// numbers as the Mac menu bar, in Safari, with no app to install. Only ever
-/// serves `UsageSnapshot` (percentages + timestamps) — the session key stored
-/// in Keychain never leaves this Mac process.
+/// serves `UsageSnapshot` (percentages + timestamps) — the encrypted session
+/// key on disk never leaves this Mac process.
 @MainActor
 final class LocalWebServer {
     nonisolated static let defaultPort: UInt16 = 8765

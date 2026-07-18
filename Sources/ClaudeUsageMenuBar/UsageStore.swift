@@ -41,7 +41,7 @@ final class UsageStore: ObservableObject {
     @Published private(set) var burnSamples: [BurnRateSample] = []
 
     private let service: ClaudeUsageService
-    private let keychain: KeychainHelper
+    private let sessionStore: SessionStore
     private let notifier = UsageNotifier()
     private var firedAlertThresholds: [String: Int] = [:]
     /// % ของ session จากรอบ refresh ก่อนหน้า ใช้ตรวจว่าโควตาเพิ่งรีเซ็ต
@@ -52,7 +52,7 @@ final class UsageStore: ObservableObject {
 
     init(
         service: ClaudeUsageService = ClaudeUsageService(),
-        keychain: KeychainHelper = .shared,
+        sessionStore: SessionStore = .shared,
         refreshInterval: TimeInterval = 60,
         autoStart: Bool = true,
         enableLocalWebServer: Bool = false,
@@ -60,7 +60,7 @@ final class UsageStore: ObservableObject {
         historyStore: ClaudeCodeHistoryStore? = nil
     ) {
         self.service = service
-        self.keychain = keychain
+        self.sessionStore = sessionStore
         self.refreshInterval = refreshInterval
 
         let savedBarWidth = UserDefaults.standard.double(forKey: "PrefBarWidth")
@@ -115,7 +115,7 @@ final class UsageStore: ObservableObject {
     }
 
     var hasSessionKey: Bool {
-        keychain.readSessionKey()?.isEmpty == false
+        sessionStore.readSessionKey()?.isEmpty == false
     }
 
     /// Current-session utilization, used for the menu bar icon's top bar.
@@ -162,7 +162,7 @@ final class UsageStore: ObservableObject {
     }
 
     func refresh() async {
-        guard let sessionKey = keychain.readSessionKey(), !sessionKey.isEmpty else {
+        guard let sessionKey = sessionStore.readSessionKey(), !sessionKey.isEmpty else {
             errorMessage = UsageServiceError.noSessionKey.localizedDescription
             return
         }
@@ -181,7 +181,7 @@ final class UsageStore: ObservableObject {
         } catch UsageServiceError.unauthorized {
             // Cached org id might be stale for a different account; clear it so the next
             // attempt re-resolves it once the user provides a valid session key.
-            keychain.deleteOrganizationId()
+            sessionStore.deleteOrganizationId()
             errorMessage = UsageServiceError.unauthorized.localizedDescription
         } catch {
             errorMessage = error.localizedDescription
@@ -227,11 +227,11 @@ final class UsageStore: ObservableObject {
     }
 
     private func resolveOrganizationId(sessionKey: String) async throws -> String {
-        if let cached = keychain.readOrganizationId() {
+        if let cached = sessionStore.readOrganizationId() {
             return cached
         }
         let orgId = try await service.fetchOrganizationId(sessionKey: sessionKey)
-        keychain.saveOrganizationId(orgId)
+        sessionStore.saveOrganizationId(orgId)
         return orgId
     }
 }

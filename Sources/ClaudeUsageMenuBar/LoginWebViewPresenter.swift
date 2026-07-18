@@ -81,8 +81,8 @@ final class LoginWebViewPresenter: NSObject, WKNavigationDelegate, WKUIDelegate,
                 // If all target cookies are captured, save them and close window
                 if capturedValues.count == provider.cookieNames.count {
                     if provider.id == "claude", let sessionKey = capturedValues["sessionKey"] {
-                        KeychainHelper.shared.saveSessionKey(sessionKey)
-                        KeychainHelper.shared.deleteOrganizationId()
+                        SessionStore.shared.saveSessionKey(sessionKey)
+                        SessionStore.shared.deleteOrganizationId()
                         
                         // Close window and execute callback
                         self.close()

@@ -1,21 +1,30 @@
 import XCTest
 @testable import ClaudeUsageMenuBar
 
-/// Uses a dedicated Keychain namespace so tests never touch the real
-/// `KeychainHelper.shared` item the running app stores the user's actual
-/// session key under.
+/// Uses a temp directory + dedicated namespace so tests never touch the real
+/// `SessionStore.shared` file the running app stores the user's actual session
+/// key under.
 @MainActor
 final class UsageStoreTests: XCTestCase {
-    private let keychain = KeychainHelper(service: "com.claudeusage.menubar.tests.store")
+    private var directory: URL!
+    private var sessionStore: SessionStore!
+
+    override func setUp() {
+        super.setUp()
+        directory = FileManager.default.temporaryDirectory
+            .appendingPathComponent("UsageStoreTests-\(UUID().uuidString)", isDirectory: true)
+        sessionStore = SessionStore(directory: directory, namespace: "com.claudeusage.menubar.tests.usagestore")
+    }
 
     override func tearDown() {
-        keychain.deleteSessionKey()
-        keychain.deleteOrganizationId()
+        sessionStore.deleteSessionKey()
+        sessionStore.deleteOrganizationId()
+        try? FileManager.default.removeItem(at: directory)
         super.tearDown()
     }
 
     func testRefreshWithoutSessionKeySetsError() async {
-        let store = UsageStore(keychain: keychain, autoStart: false)
+        let store = UsageStore(sessionStore: sessionStore, autoStart: false)
 
         await store.refresh()
 
@@ -24,7 +33,7 @@ final class UsageStoreTests: XCTestCase {
     }
 
     func testSessionAndWeeklyPercentReadFromUsage() {
-        let store = UsageStore(keychain: keychain, autoStart: false)
+        let store = UsageStore(sessionStore: sessionStore, autoStart: false)
         store.usage = UsageResponse(
             fiveHour: LimitWindow(utilization: 41, resetsAt: "2026-07-13T07:30:00+00:00"),
             sevenDay: LimitWindow(utilization: 43, resetsAt: nil),
@@ -38,17 +47,17 @@ final class UsageStoreTests: XCTestCase {
     }
 
     func testSessionAndWeeklyPercentNilWhenNoUsageLoaded() {
-        let store = UsageStore(keychain: keychain, autoStart: false)
+        let store = UsageStore(sessionStore: sessionStore, autoStart: false)
         XCTAssertNil(store.sessionPercent)
         XCTAssertNil(store.weeklyPercent)
     }
 
     func testHasSessionKeyReflectsKeychainState() {
-        keychain.deleteSessionKey()
-        let store = UsageStore(keychain: keychain, autoStart: false)
+        sessionStore.deleteSessionKey()
+        let store = UsageStore(sessionStore: sessionStore, autoStart: false)
         XCTAssertFalse(store.hasSessionKey)
 
-        keychain.saveSessionKey("test-value")
+        sessionStore.saveSessionKey("test-value")
         XCTAssertTrue(store.hasSessionKey)
     }
 }

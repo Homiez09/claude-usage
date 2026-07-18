@@ -28,7 +28,7 @@ claude_usage/
 │   │                                     # local web server + activity monitor, evaluates alerts
 │   ├── UsageService.swift               # HTTP client for claude.ai's usage API
 │   ├── UsageModels.swift                # Codable models for the usage API response
-│   ├── KeychainHelper.swift             # Session key storage (macOS Keychain)
+│   ├── SessionStore.swift               # Session key storage (AES-GCM encrypted file, not Keychain)
 │   ├── DateParsing.swift                # ISO8601 parsing + "resets in Xh Ym" formatting
 │   │
 │   ├── MenuContentView.swift            # The dropdown UI (Usage / History tabs + QR code)

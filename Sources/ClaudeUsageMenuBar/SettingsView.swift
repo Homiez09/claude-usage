@@ -106,7 +106,7 @@ struct SettingsView: View {
                     Image(systemName: "lock.fill")
                         .foregroundColor(.green)
                         .font(.system(size: 10))
-                    Text("เชื่อมต่อสำเร็จแล้ว ข้อมูลเซสชันถูกเก็บใน Keychain อย่างปลอดภัย")
+                    Text("เชื่อมต่อสำเร็จแล้ว ข้อมูลเซสชันถูกเข้ารหัสเก็บไว้ในเครื่องนี้")
                         .font(.system(size: 10))
                         .foregroundColor(.secondary)
                 }
@@ -210,8 +210,8 @@ struct SettingsView: View {
     }
 
     private func clear() {
-        KeychainHelper.shared.deleteSessionKey()
-        KeychainHelper.shared.deleteOrganizationId()
+        SessionStore.shared.deleteSessionKey()
+        SessionStore.shared.deleteOrganizationId()
         store.usage = nil
         store.errorMessage = nil
     }

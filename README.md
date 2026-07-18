@@ -100,21 +100,48 @@ open ClaudeUsageMenuBar.app
 ```
 
 **First launch only:** since the binary is ad-hoc signed (no Apple Developer
-account), macOS Gatekeeper blocks a plain double-click the first time. In
-Finder, **Control-click → Open**, then confirm in the dialog — after that,
-double-clicking works normally. You'll also see one Keychain prompt the first
-time the app reads/writes the session key; choose **Always Allow** so it
-doesn't ask again. Both of these reset if you rebuild the app (a new build
-gets a new ad-hoc signature), so expect to repeat them after `./build_app.sh`
-during development.
+account, so it's neither Developer-ID-signed nor notarized), a fresh download
+carries the `com.apple.quarantine` flag macOS attaches to anything downloaded
+via a browser. Two separate things happen because of that flag, and both need
+handling or the app **will get silently killed by macOS partway through the
+first launch** — commonly right around the time you're using the login
+window, which looks like "the window flashes open and closes itself":
+
+1. **Gatekeeper's launch block** — Finder refuses a plain double-click
+   ("cannot verify developer"). **Control-click → Open**, then confirm in the
+   dialog, works around this part.
+2. **The deferred kill** — even after step 1, macOS's background security
+   policy (`AppleSystemPolicy`) re-evaluates a quarantined, unnotarized app a
+   short time (roughly 20–40s) after it actually starts running, and kills
+   the whole process if it can't vouch for it — independent of anything the
+   app itself is doing. Control-clicking "Open" does **not** prevent this;
+   only removing the quarantine flag does:
+   ```sh
+   xattr -cr /path/to/ClaudeUsageMenuBar.app   # e.g. ~/Applications/ClaudeUsageMenuBar.app
+   ```
+   Run this once, before first launch (or after re-downloading a new
+   release — the quarantine flag comes back on every fresh download).
+
+Both quirks reset if you rebuild locally too (a new build gets a new ad-hoc
+signature), so expect to repeat them after `./build_app.sh` during
+development — though a locally-built copy never has the quarantine flag in
+the first place (only browser/AirDrop/Mail downloads get it), so in practice
+only the Gatekeeper "Open Anyway" prompt applies during local dev, not the
+`xattr` step.
+
+The only way to remove this friction for everyone permanently is enrolling in
+the Apple Developer Program ($99/yr) and notarizing CI release builds — not
+done here since this is a personal-use utility.
 
 ### First-time setup inside the app
 
 1. Click the menu bar icon → **ตั้งค่า...** (Settings)
-2. In Chrome, open claude.ai while logged in → DevTools (⌘⌥I) → Application →
-   Cookies → copy the `sessionKey` cookie value
-3. Paste it into the settings window and save — it's stored in macOS Keychain
-   only, never written to disk elsewhere or sent anywhere but claude.ai
+2. Click **เข้าสู่ระบบ Claude** and log in with your claude.ai account in the
+   window that opens — the app captures the `sessionKey` cookie automatically
+   once login succeeds
+3. The session key is stored as an encrypted file in this Mac's Application
+   Support folder (see `SessionStore.swift`) — never written anywhere else or
+   sent anywhere but claude.ai
 
 ## Notes on the data sources
 

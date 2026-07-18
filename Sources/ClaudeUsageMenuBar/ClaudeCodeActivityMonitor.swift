@@ -41,6 +41,10 @@ final class ClaudeCodeActivityMonitor: ObservableObject {
     private var pendingPollTask: Task<Void, Never>?
     /// สถานะของ `SessionEndPlanner`: session ไหนเริ่ม active ตั้งแต่เมื่อไหร่
     private var activeSince: [String: Date] = [:]
+    /// นับรอบ poll ที่เริ่มไปแล้ว / รอบล่าสุดที่ถูก apply — กันผลลัพธ์เก่า
+    /// (จาก poll ที่เริ่มก่อนแต่ scan เสร็จช้ากว่า) มาทับผลลัพธ์ใหม่กว่า
+    private var pollGeneration = 0
+    private var appliedGeneration = 0
 
     init(
         directory: URL = ClaudeCodeTranscriptScanner.projectsDirectory,
@@ -165,12 +169,25 @@ final class ClaudeCodeActivityMonitor: ObservableObject {
 
     private func poll() async {
         lastPollTime = Date()
+        pollGeneration += 1
+        let generation = pollGeneration
         let directory = self.directory
         let window = self.activeWindow
         let cachedTitles = self.titleCache
         let result = await Task.detached(priority: .utility) {
             Self.scanSessions(directory: directory, activeWindow: window, cachedTitles: cachedTitles)
         }.value
+
+        // Three independent triggers (FSEvents, the 15s fallback timer, and
+        // the initial poll in `start()`) can each kick off a `poll()`, and
+        // their detached scans don't necessarily finish in the order they
+        // started — a slow scan begun *before* a session went idle can land
+        // *after* a faster, newer scan that already reflects it going idle,
+        // silently reviving a stale "active" state that then never gets
+        // corrected until the next event. Only apply a result if no later
+        // poll has already been applied.
+        guard generation > appliedGeneration else { return }
+        appliedGeneration = generation
 
         titleCache.merge(result.newlyResolvedTitles) { _, new in new }
         sessions = result.sessions
